@@ -54,7 +54,7 @@ def load_profile_from_supabase() -> Tuple[Optional[str], Optional[str]]:
     if not url or not key:
         return None, "Credenciais do Supabase ausentes nos Secrets."
     if key.startswith("sb_publishable_"):
-        return None, "Use uma chave privada de servidor (service_role ou sb_secret_...) nos Secrets."
+        return None, "Use uma chave privada de servidor nos Secrets."
 
     try:
         client = init_supabase_client(url, key)
@@ -89,7 +89,7 @@ def save_profile_to_supabase(profile_text: str) -> Tuple[bool, str]:
         return False, "Erro ao salvar o perfil no Supabase."
 
 
-# --- MEMÓRIAS DINÂMICAS (SUPABASE) ---
+# --- MEMÓRIAS E ESTILO DE ESCRITA (SUPABASE) ---
 def get_memories_from_supabase() -> List[Dict]:
     url, key = get_supabase_credentials()
     if not url or not key or key.startswith("sb_publishable_"):
@@ -134,7 +134,6 @@ def clear_all_memories_supabase() -> None:
         return
     try:
         client = init_supabase_client(url, key)
-        # Deleta tudo (filtra por ID maior que 0)
         client.table("ego_memories").delete().gt("id", 0).execute()
     except Exception:
         pass
@@ -184,11 +183,19 @@ def build_system_instruction(profile_text: str, memories: List[Dict]) -> str:
     if profile_text and profile_text.strip():
         parts.append(profile_text.strip())
 
+    style_rules = [
+        "DIRETRIZ DE ESTILO DE ESCRITA OBRIGATÓRIA:",
+        "- Imite rigorosamente o estilo de escrita natural, informal e direto do criador.",
+        "- Utilize as abreviações, gírias e a forma descontraída de encurtar palavras que ele usa (como 'vc', 'tbm', etc.).",
+        "- Não utilize formalidades robóticas ou excesso de rigidez gramatical quando o tom for casual."
+    ]
+    parts.append("\n".join(style_rules))
+
     if memories:
         mem_lines = "\n".join(f"- [{m.get('category', 'geral').upper()}] {m['content']}" for m in memories)
         parts.append(
-            f"## Memórias Dinâmicas e Conhecimentos Acumulados\n"
-            f"Estes são fatos, ideias e pensamentos críticos aprendidos anteriormente:\n{mem_lines}"
+            f"## Memórias, Ideias e Padrões de Estilo Acumulados\n"
+            f"Estes são conhecimentos, gírias e formas de escrita capturadas anteriormente:\n{mem_lines}"
         )
 
     return "\n\n".join(parts)
@@ -248,18 +255,9 @@ def call_gemini_api(
 
 def auto_detect_and_save_knowledge(api_key: str, user_prompt: str) -> Optional[Tuple[str, str]]:
     """
-    Usa uma chamada rápida ao Gemini para analisar se a frase do usuário contém
-    uma ideia, pensamento crítico ou instrução explícita de salvamento ("salva isso").
-    Retorna (conteudo_extraido, categoria) se houver aprendizado, ou None.
+    Analisa a mensagem do usuário para extrair ideias, pensamentos críticos OU
+    padrões de escrita/gírias/abreviações utilizadas (ex: 'vc', 'tbm', gírias).
     """
-    prompt_lower = user_prompt.lower()
-    trigger_words = ["salva", "lembra", "anota", "ideia:", "pensamento:", "conceito:"]
-    is_explicit = any(w in prompt_lower for w in trigger_words)
-
-    # Se não tiver comando explícito e for muito curto, ignora para poupar requisições
-    if not is_explicit and len(user_prompt.split()) < 5:
-        return None
-
     detection_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent"
     headers = {"Content-Type": "application/json", "x-goog-api-key": api_key.strip()}
     
@@ -268,10 +266,11 @@ def auto_detect_and_save_knowledge(api_key: str, user_prompt: str) -> Optional[T
             "role": "user",
             "parts": [{
                 "text": (
-                    "Analise a frase abaixo dita pelo criador. Ela contém uma ideia, um pensamento crítico, "
-                    "uma preferência ou um conceito que vale a pena guardar na memória permanente do assistente?\n"
-                    "Responda EXATAMENTE no formato:\n"
-                    "SIM | [categoria: ideia, pensamento_critico ou conhecimento] | [Resumo claro da ideia em 1 frase]\n"
+                    "Analise a frase enviada pelo criador. Verifique se ela contém:\n"
+                    "1. Uma abreviação específica, gíria ou padrão de escrita próprio dele (ex: uso de 'vc', 'tbm', maneirismos).\n"
+                    "2. Uma ideia, pensamento crítico ou conceito relevante.\n\n"
+                    "Se houver algo útil para gravar no estilo ou nas memórias, responda EXATAMENTE no formato:\n"
+                    "SIM | [categoria: estilo_escrita, ideia, pensamento_critico ou conhecimento] | [Descrição clara do padrão ou ideia em 1 frase]\n"
                     "OU\n"
                     "NAO\n\n"
                     f"Frase: {user_prompt}"
@@ -342,7 +341,6 @@ def main() -> None:
     gemini_api_key = get_secret("GEMINI_API_KEY")
     gemini_model = get_secret("GEMINI_MODEL", default="gemini-3.5-flash-lite")
 
-    # Carrega memórias dinâmicas do Supabase
     memories = get_memories_from_supabase()
 
     # ------------------------------------------
@@ -375,15 +373,13 @@ def main() -> None:
 
         st.divider()
 
-        # Seção de Conhecimentos e Memórias Dinâmicas (Supabase)
-        st.subheader("Memórias & Ideias")
-        new_mem = st.text_area("Adicionar ideia / pensamento", key="new_mem_input", height=80)
-        col_cat1, col_cat2 = st.columns(2)
-        mem_cat = col_cat1.selectbox("Categoria", ["ideia", "pensamento_critico", "conhecimento", "geral"])
+        st.subheader("Memórias & Estilo")
+        new_mem = st.text_area("Adicionar ideia ou gíria", key="new_mem_input", height=80)
+        mem_cat = st.selectbox("Categoria", ["estilo_escrita", "ideia", "pensamento_critico", "conhecimento", "geral"])
 
         if st.button("Guardar na nuvem", use_container_width=True):
             if add_memory_to_supabase(new_mem, mem_cat):
-                st.success("Ideia guardada na nuvem!")
+                st.success("Guardado na nuvem!")
                 st.rerun()
             else:
                 st.warning("Escreva algo para guardar.")
@@ -391,14 +387,14 @@ def main() -> None:
         st.caption(f"{len(memories)} itens guardados no Supabase")
 
         if memories:
-            with st.expander("Ver / gerenciar memórias"):
+            with st.expander("Ver / gerenciar itens"):
                 for m in memories:
                     c1, c2 = st.columns([4, 1])
                     c1.write(f"• **[{m.get('category','geral').upper()}]** {m['content']}")
                     if c2.button("🗑️", key=f"del_mem_{m['id']}"):
                         delete_memory_from_supabase(m["id"])
                         st.rerun()
-                if st.button("Apagar todas as memórias", use_container_width=True):
+                if st.button("Apagar tudo", use_container_width=True):
                     clear_all_memories_supabase()
                     st.rerun()
 
@@ -412,7 +408,7 @@ def main() -> None:
     # ÁREA PRINCIPAL (CHAT)
     # ------------------------------------------
     st.title("🧠 EGO.exe")
-    st.caption("Assistente dinâmico com perfil e memórias persistidas na nuvem.")
+    st.caption("Assistente dinâmico com espelhamento de estilo de escrita na nuvem.")
 
     chat_history = get_chat_history_supabase()
 
@@ -427,26 +423,22 @@ def main() -> None:
             st.error("Configure a GEMINI_API_KEY nos Secrets.")
             return
 
-        # 1. Exibe e salva a mensagem do usuário na nuvem
         with st.chat_message("user"):
             st.markdown(user_prompt)
         save_chat_message_supabase("user", user_prompt)
         chat_history.append({"role": "user", "content": user_prompt})
 
-        # 2. Verificação de auto-salvamento inteligente (Ideias / Pensamento crítico / Comando explícito)
+        # Detecção automática de estilo de escrita, gírias ou ideias
         learned_item = auto_detect_and_save_knowledge(gemini_api_key, user_prompt)
         if learned_item:
             content_learned, cat_learned = learned_item
             add_memory_to_supabase(content_learned, cat_learned)
-            st.toast(f"💡 EGO aprendeu ({cat_learned}): {content_learned}", icon="🧠")
-            # Recarrega as memórias para incluir a nova descoberta imediatamente
+            st.toast(f"✍️ EGO capturou ({cat_learned}): {content_learned}", icon="🧠")
             memories = get_memories_from_supabase()
 
-        # 3. Constrói instrução de sistema atualizada com as memórias dinâmicas
         active_profile = st.session_state.get("profile_input", "")
         system_instruction = build_system_instruction(active_profile, memories)
 
-        # 4. Chama o Gemini e responde
         with st.chat_message("assistant"):
             with st.spinner("Pensando..."):
                 reply = call_gemini_api(
