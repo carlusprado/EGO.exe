@@ -1,4 +1,4 @@
-# EGO.exe — pacote limpo para publicação
+# EGO.exe
 
 Este pacote não contém chave de API, conversas anteriores, banco de memórias ou perfil pessoal.
 
