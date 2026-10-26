@@ -89,7 +89,7 @@ def save_profile_to_supabase(profile_text: str) -> Tuple[bool, str]:
         return False, "Erro ao salvar o perfil no Supabase."
 
 
-# --- MEMÓRIAS E ESTILO DE ESCRITA (SUPABASE) ---
+# --- MEMÓRIAS E CONTEÚDO PROFUNDO (SUPABASE) ---
 def get_memories_from_supabase() -> List[Dict]:
     url, key = get_supabase_credentials()
     if not url or not key or key.startswith("sb_publishable_"):
@@ -102,7 +102,7 @@ def get_memories_from_supabase() -> List[Dict]:
         return []
 
 
-def add_memory_to_supabase(content: str, category: str = "geral") -> bool:
+def add_memory_to_supabase(content: str, category: str = "pensamento_ideia") -> bool:
     cleaned = content.strip()
     if not cleaned:
         return False
@@ -184,18 +184,25 @@ def build_system_instruction(profile_text: str, memories: List[Dict]) -> str:
         parts.append(profile_text.strip())
 
     style_rules = [
-        "DIRETRIZ DE ESTILO DE ESCRITA OBRIGATÓRIA:",
-        "- Imite rigorosamente o estilo de escrita natural, informal e direto do criador.",
-        "- Utilize as abreviações, gírias e a forma descontraída de encurtar palavras que ele usa (como 'vc', 'tbm', etc.).",
-        "- Não utilize formalidades robóticas ou excesso de rigidez gramatical quando o tom for casual."
+        "DIRETRIZ DE PENSAMENTO E ESPELHAMENTO COMPLETO:",
+        "- Você é a mente digital do criador. Não atue como um assistente corporativo genérico.",
+        "- Adote os critérios de decisão dele, priorizando praticidade absoluta e zero enrolação.",
+        "- Replique o tom emocional, a franqueza e a informalidade direta.",
+        "- Use as abreviações frequentes ('vc', 'tbm'), gírias e o ritmo de escrita natural capturados nas memórias."
     ]
     parts.append("\n".join(style_rules))
 
     if memories:
-        mem_lines = "\n".join(f"- [{m.get('category', 'geral').upper()}] {m['content']}" for m in memories)
+        # Organiza as memórias por categoria para alimentar o raciocínio do EGO
+        categorized_lines = []
+        for m in memories:
+            cat = m.get('category', 'pensamento_ideia').upper()
+            categorized_lines.append(f"- [{cat}] {m['content']}")
+        
+        mem_lines = "\n".join(categorized_lines)
         parts.append(
-            f"## Memórias, Ideias e Padrões de Estilo Acumulados\n"
-            f"Estes são conhecimentos, gírias e formas de escrita capturadas anteriormente:\n{mem_lines}"
+            f"## Base de Conhecimento Profundo, Critérios e Estilo do Criador\n"
+            f"Estes são dados reais extraídos da mente e do cotidiano dele:\n{mem_lines}"
         )
 
     return "\n\n".join(parts)
@@ -253,10 +260,11 @@ def call_gemini_api(
     return "Erro temporário nos servidores do Gemini."
 
 
-def auto_detect_and_save_knowledge(api_key: str, user_prompt: str) -> Optional[Tuple[str, str]]:
+def deep_extract_and_save_knowledge(api_key: str, user_prompt: str) -> Optional[Tuple[str, str]]:
     """
-    Analisa a mensagem do usuário para extrair ideias, pensamentos críticos OU
-    padrões de escrita/gírias/abreviações utilizadas (ex: 'vc', 'tbm', gírias).
+    Pipeline de extração profunda: analisa a mensagem do usuário e categoriza
+    o conteúdo util em Pensamentos/Ideias, Critérios de Decisão, Contexto Cotidiano
+    ou Perfil Linguístico/Comportamental.
     """
     detection_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent"
     headers = {"Content-Type": "application/json", "x-goog-api-key": api_key.strip()}
@@ -266,14 +274,18 @@ def auto_detect_and_save_knowledge(api_key: str, user_prompt: str) -> Optional[T
             "role": "user",
             "parts": [{
                 "text": (
-                    "Analise a frase enviada pelo criador. Verifique se ela contém:\n"
-                    "1. Uma abreviação específica, gíria ou padrão de escrita próprio dele (ex: uso de 'vc', 'tbm', maneirismos).\n"
-                    "2. Uma ideia, pensamento crítico ou conceito relevante.\n\n"
-                    "Se houver algo útil para gravar no estilo ou nas memórias, responda EXATAMENTE no formato:\n"
-                    "SIM | [categoria: estilo_escrita, ideia, pensamento_critico ou conhecimento] | [Descrição clara do padrão ou ideia em 1 frase]\n"
+                    "Você é um extrator analítico da mente de um estudante universitário de IA em Ouro Preto. "
+                    "Analise a mensagem enviada abaixo e extraia tudo o que for útil para construir a persona dele.\n\n"
+                    "Classifique estritamente em UMA destas 4 categorias:\n"
+                    "1. pensamento_ideia -> Brisas, raciocínios, ideias de projetos, conceitos e o porquê de ter chegado nisso.\n"
+                    "2. criterio_decisao -> Como ele toma decisões, o que prioriza, o que odeia (ex: zero enrolação, priorizar faculdade).\n"
+                    "3. contexto_cotidiano -> Fatos sobre a vida dele (república, Ouro Preto, UFOP, perrengues, rolês, repúblicas).\n"
+                    "4. perfil_linguistico -> Gírias, abreviações (vc, tbm), vícios de linguagem, ritmo das frases e tom emocional.\n\n"
+                    "Se houver valor útil para guardar, responda EXATAMENTE no formato:\n"
+                    "SIM | [categoria exata acima] | [Resumo claro e profundo do aprendizado em 1 frase]\n"
                     "OU\n"
                     "NAO\n\n"
-                    f"Frase: {user_prompt}"
+                    f"Mensagem do usuário: {user_prompt}"
                 )
             }]
         }]
@@ -373,9 +385,12 @@ def main() -> None:
 
         st.divider()
 
-        st.subheader("Memórias & Estilo")
-        new_mem = st.text_area("Adicionar ideia ou gíria", key="new_mem_input", height=80)
-        mem_cat = st.selectbox("Categoria", ["estilo_escrita", "ideia", "pensamento_critico", "conhecimento", "geral"])
+        st.subheader("Memória Profunda (Nuvem)")
+        new_mem = st.text_area("Adicionar conhecimento manualmente", key="new_mem_input", height=80)
+        mem_cat = st.selectbox(
+            "Categoria", 
+            ["pensamento_ideia", "criterio_decisao", "contexto_cotidiano", "perfil_linguistico"]
+        )
 
         if st.button("Guardar na nuvem", use_container_width=True):
             if add_memory_to_supabase(new_mem, mem_cat):
@@ -384,10 +399,10 @@ def main() -> None:
             else:
                 st.warning("Escreva algo para guardar.")
 
-        st.caption(f"{len(memories)} itens guardados no Supabase")
+        st.caption(f"{len(memories)} itens de memória profunda")
 
         if memories:
-            with st.expander("Ver / gerenciar itens"):
+            with st.expander("Ver / gerenciar memórias"):
                 for m in memories:
                     c1, c2 = st.columns([4, 1])
                     c1.write(f"• **[{m.get('category','geral').upper()}]** {m['content']}")
@@ -408,7 +423,7 @@ def main() -> None:
     # ÁREA PRINCIPAL (CHAT)
     # ------------------------------------------
     st.title("🧠 EGO.exe")
-    st.caption("Assistente dinâmico com espelhamento de estilo de escrita na nuvem.")
+    st.caption("Pipeline de extração profunda e espelhamento de raciocínio ativo.")
 
     chat_history = get_chat_history_supabase()
 
@@ -428,19 +443,19 @@ def main() -> None:
         save_chat_message_supabase("user", user_prompt)
         chat_history.append({"role": "user", "content": user_prompt})
 
-        # Detecção automática de estilo de escrita, gírias ou ideias
-        learned_item = auto_detect_and_save_knowledge(gemini_api_key, user_prompt)
+        # Pipeline de extração profunda ativado a cada mensagem
+        learned_item = deep_extract_and_save_knowledge(gemini_api_key, user_prompt)
         if learned_item:
             content_learned, cat_learned = learned_item
             add_memory_to_supabase(content_learned, cat_learned)
-            st.toast(f"✍️ EGO capturou ({cat_learned}): {content_learned}", icon="🧠")
+            st.toast(f"🧠 EGO absorveu [{cat_learned}]: {content_learned}", icon="🚀")
             memories = get_memories_from_supabase()
 
         active_profile = st.session_state.get("profile_input", "")
         system_instruction = build_system_instruction(active_profile, memories)
 
         with st.chat_message("assistant"):
-            with st.spinner("Pensando..."):
+            with st.spinner("Pensando com o seu critério..."):
                 reply = call_gemini_api(
                     api_key=gemini_api_key,
                     preferred_model=gemini_model,
