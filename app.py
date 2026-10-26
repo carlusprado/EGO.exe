@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import time
 from typing import Dict, List, Optional, Tuple
 
@@ -16,7 +15,6 @@ st.set_page_config(
     layout="wide",
 )
 
-DB_PATH = "ego_local.db"
 PROFILE_ROW_KEY = "default"
 DEFAULT_PROFILE_PLACEHOLDER = (
     "# Perfil do EGO\n\n"
@@ -25,10 +23,9 @@ DEFAULT_PROFILE_PLACEHOLDER = (
 
 
 # ==========================================
-# LEITURA SEGURA DE SECRETS / VARIÁVEIS
+# LEITURA DE SECRETS
 # ==========================================
 def get_secret(key_name: str, default: str = "") -> str:
-    """Obtém uma configuração do st.secrets ou variáveis de ambiente de forma segura."""
     try:
         if key_name in st.secrets and st.secrets[key_name] is not None:
             return str(st.secrets[key_name]).strip()
@@ -38,42 +35,26 @@ def get_secret(key_name: str, default: str = "") -> str:
 
 
 def get_supabase_credentials() -> Tuple[str, str]:
-    """
-    Obtém a URL e a chave de servidor do Supabase.
-    Aceita SUPABASE_SERVICE_ROLE_KEY (solicitado) ou SUPABASE_SECRET_KEY (novo padrão sb_secret_).
-    Bloqueia o uso acidental de chaves públicas (sb_publishable_).
-    """
     url = get_secret("SUPABASE_URL")
     key = get_secret("SUPABASE_SERVICE_ROLE_KEY") or get_secret("SUPABASE_SECRET_KEY")
     return url, key
 
 
 # ==========================================
-# CLIENTE SUPABASE E PERSISTÊNCIA DO PERFIL
+# CLIENTE SUPABASE
 # ==========================================
 @st.cache_resource(show_spinner=False)
 def init_supabase_client(supabase_url: str, supabase_key: str) -> Client:
-    """Inicializa e mantém em cache o cliente do Supabase."""
     return create_client(supabase_url, supabase_key)
 
 
+# --- PERFIL ---
 def load_profile_from_supabase() -> Tuple[Optional[str], Optional[str]]:
-    """
-    Carrega o perfil salvo no Supabase.
-    Retorna (texto_do_perfil, mensagem_de_erro).
-    """
     url, key = get_supabase_credentials()
     if not url or not key:
-        return None, (
-            "Credenciais do Supabase ausentes nos Secrets "
-            "(configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY)."
-        )
-
+        return None, "Credenciais do Supabase ausentes nos Secrets."
     if key.startswith("sb_publishable_"):
-        return None, (
-            "A chave configurada é pública (sb_publishable_...). "
-            "Use uma chave privada de servidor (service_role ou sb_secret_...) nos Secrets."
-        )
+        return None, "Use uma chave privada de servidor (service_role ou sb_secret_...) nos Secrets."
 
     try:
         client = init_supabase_client(url, key)
@@ -87,152 +68,128 @@ def load_profile_from_supabase() -> Tuple[Optional[str], Optional[str]]:
         rows = getattr(response, "data", None) or []
         if rows and isinstance(rows[0].get("profile_text"), str):
             return rows[0]["profile_text"], None
-        return None, None  # Tabela acessível, mas nenhum perfil salvo ainda
+        return None, None
     except Exception:
-        return None, (
-            "Não foi possível carregar o perfil do Supabase. "
-            "Verifique se a tabela 'ego_settings' foi criada e se as credenciais estão corretas."
-        )
+        return None, "Erro ao carregar o perfil do Supabase."
 
 
 def save_profile_to_supabase(profile_text: str) -> Tuple[bool, str]:
-    """
-    Salva o perfil no Supabase sem sobrescrever com texto vazio.
-    Retorna (sucesso, mensagem).
-    """
     if not profile_text or not profile_text.strip():
-        return False, "O perfil está vazio. Digite suas instruções antes de salvar."
-
+        return False, "O perfil está vazio."
     url, key = get_supabase_credentials()
-    if not url or not key:
-        return False, (
-            "Configuração incompleta: defina SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY nos Secrets."
-        )
-
-    if key.startswith("sb_publishable_"):
-        return False, (
-            "Operação bloqueada: você configurou uma chave pública (sb_publishable_...). "
-            "Substitua pela chave de servidor (service_role ou sb_secret_...)."
-        )
+    if not url or not key or key.startswith("sb_publishable_"):
+        return False, "Chave de servidor inválida ou ausente nos Secrets."
 
     try:
         client = init_supabase_client(url, key)
-        payload = {
-            "profile_key": PROFILE_ROW_KEY,
-            "profile_text": profile_text,  # Preserva exatamente quebras de linha, acentos e Markdown
-        }
-        response = (
-            client.table("ego_settings")
-            .upsert(payload, on_conflict="profile_key")
-            .execute()
-        )
-        saved_rows = getattr(response, "data", None)
-        if saved_rows and len(saved_rows) > 0:
-            return True, "Perfil salvo com sucesso no Supabase!"
-        return False, "O Supabase não confirmou a gravação do perfil. Verifique as permissões da tabela."
+        payload = {"profile_key": PROFILE_ROW_KEY, "profile_text": profile_text}
+        client.table("ego_settings").upsert(payload, on_conflict="profile_key").execute()
+        return True, "Perfil salvo com sucesso no Supabase!"
     except Exception:
-        return False, (
-            "Erro de conexão ou permissão ao salvar no Supabase. "
-            "Verifique se a tabela 'ego_settings' existe e se a chave de servidor é válida."
-        )
+        return False, "Erro ao salvar o perfil no Supabase."
 
 
-# ==========================================
-# BANCO SQLITE LOCAL (HISTÓRICO E MEMÓRIAS)
-# ==========================================
-def init_local_db() -> None:
-    """Inicializa as tabelas locais de memórias e histórico de conversa."""
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS memories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                content TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                role TEXT NOT NULL,
-                content TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        conn.commit()
+# --- MEMÓRIAS DINÂMICAS (SUPABASE) ---
+def get_memories_from_supabase() -> List[Dict]:
+    url, key = get_supabase_credentials()
+    if not url or not key or key.startswith("sb_publishable_"):
+        return []
+    try:
+        client = init_supabase_client(url, key)
+        response = client.table("ego_memories").select("id, content, category").order("id", desc=False).execute()
+        return getattr(response, "data", None) or []
+    except Exception:
+        return []
 
 
-def get_memories() -> List[Tuple[int, str]]:
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, content FROM memories ORDER BY id ASC")
-        return cursor.fetchall()
-
-
-def add_memory(content: str) -> None:
+def add_memory_to_supabase(content: str, category: str = "geral") -> bool:
     cleaned = content.strip()
     if not cleaned:
+        return False
+    url, key = get_supabase_credentials()
+    if not url or not key or key.startswith("sb_publishable_"):
+        return False
+    try:
+        client = init_supabase_client(url, key)
+        client.table("ego_memories").insert({"content": cleaned, "category": category}).execute()
+        return True
+    except Exception:
+        return False
+
+
+def delete_memory_from_supabase(memory_id: int) -> None:
+    url, key = get_supabase_credentials()
+    if not url or not key:
         return
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO memories (content) VALUES (?)", (cleaned,))
-        conn.commit()
+    try:
+        client = init_supabase_client(url, key)
+        client.table("ego_memories").delete().eq("id", memory_id).execute()
+    except Exception:
+        pass
 
 
-def delete_memory(memory_id: int) -> None:
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
-        conn.commit()
+def clear_all_memories_supabase() -> None:
+    url, key = get_supabase_credentials()
+    if not url or not key:
+        return
+    try:
+        client = init_supabase_client(url, key)
+        # Deleta tudo (filtra por ID maior que 0)
+        client.table("ego_memories").delete().gt("id", 0).execute()
+    except Exception:
+        pass
 
 
-def clear_all_memories() -> None:
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM memories")
-        conn.commit()
+# --- HISTÓRICO DE CHAT (SUPABASE) ---
+def get_chat_history_supabase() -> List[Dict[str, str]]:
+    url, key = get_supabase_credentials()
+    if not url or not key or key.startswith("sb_publishable_"):
+        return []
+    try:
+        client = init_supabase_client(url, key)
+        response = client.table("ego_messages").select("role, content").order("id", desc=False).execute()
+        rows = getattr(response, "data", None) or []
+        return [{"role": r["role"], "content": r["content"]} for r in rows]
+    except Exception:
+        return []
 
 
-def get_chat_history() -> List[Dict[str, str]]:
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT role, content FROM messages ORDER BY id ASC")
-        return [{"role": row[0], "content": row[1]} for row in cursor.fetchall()]
+def save_chat_message_supabase(role: str, content: str) -> None:
+    url, key = get_supabase_credentials()
+    if not url or not key:
+        return
+    try:
+        client = init_supabase_client(url, key)
+        client.table("ego_messages").insert({"role": role, "content": content}).execute()
+    except Exception:
+        pass
 
 
-def save_chat_message(role: str, content: str) -> None:
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO messages (role, content) VALUES (?, ?)",
-            (role, content),
-        )
-        conn.commit()
-
-
-def clear_chat_history() -> None:
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM messages")
-        conn.commit()
+def clear_chat_history_supabase() -> None:
+    url, key = get_supabase_credentials()
+    if not url or not key:
+        return
+    try:
+        client = init_supabase_client(url, key)
+        client.table("ego_messages").delete().gt("id", 0).execute()
+    except Exception:
+        pass
 
 
 # ==========================================
 # INTEGRAÇÃO COM GOOGLE GEMINI API
 # ==========================================
-def build_system_instruction(profile_text: str, memories: List[Tuple[int, str]]) -> str:
-    """Combina o perfil/instruções do EGO com as memórias ativas."""
+def build_system_instruction(profile_text: str, memories: List[Dict]) -> str:
     parts = []
     if profile_text and profile_text.strip():
         parts.append(profile_text.strip())
 
     if memories:
-        mem_lines = "\n".join(f"- {m[1]}" for m in memories)
-        parts.append(f"## Memórias Registradas\nConsidere estas memórias relevantes:\n{mem_lines}")
+        mem_lines = "\n".join(f"- [{m.get('category', 'geral').upper()}] {m['content']}" for m in memories)
+        parts.append(
+            f"## Memórias Dinâmicas e Conhecimentos Acumulados\n"
+            f"Estes são fatos, ideias e pensamentos críticos aprendidos anteriormente:\n{mem_lines}"
+        )
 
     return "\n\n".join(parts)
 
@@ -243,13 +200,7 @@ def call_gemini_api(
     system_instruction: str,
     chat_history: List[Dict[str, str]],
 ) -> str:
-    """
-    Envia o histórico e a system_instruction ao Gemini com retry e fallback
-    para contornar erros HTTP 404 (modelo restrito) e 503 (sobrecarga temporária).
-    """
     clean_model = preferred_model.replace("models/", "").strip() or "gemini-3.5-flash-lite"
-
-    # Ordem de tentativa: modelo configurado nos Secrets -> fallbacks estáveis
     candidate_models = []
     for m in [clean_model, "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.7-flash"]:
         if m and m not in candidate_models:
@@ -262,27 +213,15 @@ def call_gemini_api(
 
     payload: Dict = {"contents": contents}
     if system_instruction.strip():
-        payload["system_instruction"] = {
-            "parts": [{"text": system_instruction}]
-        }
+        payload["system_instruction"] = {"parts": [{"text": system_instruction}]}
 
-    headers = {
-        "Content-Type": "application/json",
-        "x-goog-api-key": api_key.strip(),
-    }
-
-    last_status = None
-    last_model = clean_model
+    headers = {"Content-Type": "application/json", "x-goog-api-key": api_key.strip()}
 
     for model_name in candidate_models:
-        last_model = model_name
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
-
         for attempt in range(2):
             try:
                 response = requests.post(url, headers=headers, json=payload, timeout=45)
-                last_status = response.status_code
-
                 if response.status_code == 200:
                     data = response.json()
                     candidates = data.get("candidates", [])
@@ -292,52 +231,84 @@ def call_gemini_api(
                         if texts:
                             return "".join(texts)
                     return "O modelo respondeu sem texto gerado."
-
-                # Sobrecarga temporária (503) ou rate-limit (429): aguarda na 1ª tentativa
                 if response.status_code in (429, 503) and attempt == 0:
                     time.sleep(2)
                     continue
-
-                # Se for 404 (modelo indisponível para a chave) ou persistir 503, tenta o próximo modelo
                 if response.status_code in (404, 429, 500, 503):
                     break
-
-                # Outros erros (ex: 400, 401, 403) interrompem imediatamente sem expor chaves
-                return (
-                    f"Erro HTTP {response.status_code} ao chamar o Gemini (modelo '{model_name}'). "
-                    "Confira a validade da chave e as permissões da API."
-                )
+                return f"Erro HTTP {response.status_code} ao comunicar com o Gemini."
             except requests.exceptions.Timeout:
                 if attempt == 0:
                     continue
             except requests.exceptions.RequestException:
-                return "Falha de conexão de rede ao comunicar com a API do Google Gemini."
+                return "Falha de rede ao comunicar com a API."
 
-    return (
-        f"Erro HTTP {last_status} ao chamar o Gemini (último modelo tentado: '{last_model}'). "
-        "Os servidores podem estar temporariamente indisponíveis ou no limite de requisições."
-    )
+    return "Erro temporário nos servidores do Gemini."
+
+
+def auto_detect_and_save_knowledge(api_key: str, user_prompt: str) -> Optional[Tuple[str, str]]:
+    """
+    Usa uma chamada rápida ao Gemini para analisar se a frase do usuário contém
+    uma ideia, pensamento crítico ou instrução explícita de salvamento ("salva isso").
+    Retorna (conteudo_extraido, categoria) se houver aprendizado, ou None.
+    """
+    prompt_lower = user_prompt.lower()
+    trigger_words = ["salva", "lembra", "anota", "ideia:", "pensamento:", "conceito:"]
+    is_explicit = any(w in prompt_lower for w in trigger_words)
+
+    # Se não tiver comando explícito e for muito curto, ignora para poupar requisições
+    if not is_explicit and len(user_prompt.split()) < 5:
+        return None
+
+    detection_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent"
+    headers = {"Content-Type": "application/json", "x-goog-api-key": api_key.strip()}
+    
+    detection_payload = {
+        "contents": [{
+            "role": "user",
+            "parts": [{
+                "text": (
+                    "Analise a frase abaixo dita pelo criador. Ela contém uma ideia, um pensamento crítico, "
+                    "uma preferência ou um conceito que vale a pena guardar na memória permanente do assistente?\n"
+                    "Responda EXATAMENTE no formato:\n"
+                    "SIM | [categoria: ideia, pensamento_critico ou conhecimento] | [Resumo claro da ideia em 1 frase]\n"
+                    "OU\n"
+                    "NAO\n\n"
+                    f"Frase: {user_prompt}"
+                )
+            }]
+        }]
+    }
+
+    try:
+        resp = requests.post(detection_url, headers=headers, json=detection_payload, timeout=15)
+        if resp.status_code == 200:
+            ans = resp.json().get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+            if ans.startswith("SIM"):
+                parts = ans.split("|")
+                if len(parts) >= 3:
+                    cat = parts[1].strip()
+                    content = parts[2].strip()
+                    return content, cat
+    except Exception:
+        pass
+    return None
 
 
 # ==========================================
-# CONTROLE DE ACESSO OPCIONAL POR SENHA
+# AUTENTICAÇÃO E ESTADO
 # ==========================================
 def check_access_password() -> bool:
-    """Se EGO_ACCESS_PASSWORD estiver configurado nos Secrets, exige autenticação."""
     required_password = get_secret("EGO_ACCESS_PASSWORD")
     if not required_password:
         return True
-
     if st.session_state.get("authenticated", False):
         return True
 
     st.title("🔒 Acesso Restrito — EGO.exe")
-    st.caption("Digite a senha configurada em EGO_ACCESS_PASSWORD para acessar o assistente.")
-
     with st.form("login_form"):
         typed_password = st.text_input("Senha de acesso", type="password")
-        submit = st.form_submit_button("Entrar")
-        if submit:
+        if st.form_submit_button("Entrar"):
             if typed_password == required_password:
                 st.session_state["authenticated"] = True
                 st.rerun()
@@ -346,13 +317,7 @@ def check_access_password() -> bool:
     return False
 
 
-# ==========================================
-# INICIALIZAÇÃO DE ESTADO E APLICAÇÃO
-# ==========================================
 def initialize_state() -> None:
-    """Inicializa o banco SQLite local e carrega o perfil do Supabase uma única vez por sessão."""
-    init_local_db()
-
     if "profile_loaded" not in st.session_state:
         db_profile, err_msg = load_profile_from_supabase()
         if db_profile is not None and db_profile.strip():
@@ -377,122 +342,111 @@ def main() -> None:
     gemini_api_key = get_secret("GEMINI_API_KEY")
     gemini_model = get_secret("GEMINI_MODEL", default="gemini-3.5-flash-lite")
 
+    # Carrega memórias dinâmicas do Supabase
+    memories = get_memories_from_supabase()
+
     # ------------------------------------------
-    # BARRA LATERAL (SIDEBAR)
+    # BARRA LATERAL
     # ------------------------------------------
     with st.sidebar:
         st.subheader("Configuração")
-        st.caption("O motor online usa a API do Google Gemini.")
-
         if gemini_api_key:
             st.success("Chave da API carregada dos Secrets.")
         else:
-            gemini_api_key = st.text_input(
-                "Chave da API do Gemini",
-                type="password",
-                help="Configure GEMINI_API_KEY nos Secrets para não precisar digitar aqui.",
-            ).strip()
+            gemini_api_key = st.text_input("Chave da API do Gemini", type="password").strip()
 
         if st.session_state.get("supabase_load_error"):
             st.warning(st.session_state["supabase_load_error"])
 
-        # Campo de Perfil / Instruções vinculado ao session_state
         st.text_area(
             "Perfil / instruções do EGO",
             key="profile_input",
-            height=260,
-            help="Este texto é enviado como instrução de sistema ao Gemini em todas as mensagens.",
+            height=240,
         )
-
-        # Aviso visual se houver alterações ainda não salvas na nuvem
-        if st.session_state.get("profile_input", "") != st.session_state.get("saved_profile", ""):
-            st.caption("⚠️ Você tem edições no perfil ainda não salvas no Supabase.")
 
         if st.button("Salvar perfil", use_container_width=True, type="primary"):
             current_text = st.session_state.get("profile_input", "")
             ok, feedback_msg = save_profile_to_supabase(current_text)
             if ok:
                 st.session_state["saved_profile"] = current_text
-                st.session_state["profile_source"] = "supabase"
-                st.session_state["supabase_load_error"] = None
                 st.success(feedback_msg)
             else:
                 st.error(feedback_msg)
 
         st.divider()
 
-        # Seção de Memórias (SQLite local)
-        st.subheader("Memórias")
-        new_memory_text = st.text_area(
-            "Adicionar uma memória",
-            key="new_memory_input",
-            height=100,
-        )
+        # Seção de Conhecimentos e Memórias Dinâmicas (Supabase)
+        st.subheader("Memórias & Ideias")
+        new_mem = st.text_area("Adicionar ideia / pensamento", key="new_mem_input", height=80)
+        col_cat1, col_cat2 = st.columns(2)
+        mem_cat = col_cat1.selectbox("Categoria", ["ideia", "pensamento_critico", "conhecimento", "geral"])
 
-        if st.button("Guardar memória", use_container_width=True):
-            if new_memory_text and new_memory_text.strip():
-                add_memory(new_memory_text)
-                st.success("Memória guardada nesta instância.")
+        if st.button("Guardar na nuvem", use_container_width=True):
+            if add_memory_to_supabase(new_mem, mem_cat):
+                st.success("Ideia guardada na nuvem!")
                 st.rerun()
             else:
-                st.warning("Escreva uma memória antes de guardar.")
+                st.warning("Escreva algo para guardar.")
 
-        memories = get_memories()
-        st.caption(f"{len(memories)} memórias guardadas nesta instância")
+        st.caption(f"{len(memories)} itens guardados no Supabase")
 
         if memories:
-            with st.expander("Ver / apagar memórias"):
-                for mem_id, mem_content in memories:
-                    col_text, col_del = st.columns([4, 1])
-                    col_text.write(f"• {mem_content}")
-                    if col_del.button("🗑️", key=f"del_mem_{mem_id}", help="Apagar memória"):
-                        delete_memory(mem_id)
+            with st.expander("Ver / gerenciar memórias"):
+                for m in memories:
+                    c1, c2 = st.columns([4, 1])
+                    c1.write(f"• **[{m.get('category','geral').upper()}]** {m['content']}")
+                    if c2.button("🗑️", key=f"del_mem_{m['id']}"):
+                        delete_memory_from_supabase(m["id"])
                         st.rerun()
                 if st.button("Apagar todas as memórias", use_container_width=True):
-                    clear_all_memories()
+                    clear_all_memories_supabase()
                     st.rerun()
 
         st.divider()
 
         if st.button("Apagar histórico de conversa", use_container_width=True):
-            clear_chat_history()
+            clear_chat_history_supabase()
             st.rerun()
 
     # ------------------------------------------
     # ÁREA PRINCIPAL (CHAT)
     # ------------------------------------------
     st.title("🧠 EGO.exe")
-    st.caption("Protótipo de assistente com perfil configurável e memória manual.")
+    st.caption("Assistente dinâmico com perfil e memórias persistidas na nuvem.")
 
-    if st.session_state.get("profile_source") == "supabase":
-        st.info("Perfil carregado com sucesso da nuvem (Supabase) e ativo nas instruções do sistema.")
-    else:
-        st.info("Versão limpa para publicação: cole seu perfil na barra lateral e clique em 'Salvar perfil'.")
+    chat_history = get_chat_history_supabase()
 
-    chat_history = get_chat_history()
-
-    for message in chat_history:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    for msg in chat_history:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
     user_prompt = st.chat_input("Converse com o EGO.exe...")
 
     if user_prompt:
         if not gemini_api_key:
-            st.error("Configure a GEMINI_API_KEY nos Secrets antes de enviar mensagens.")
+            st.error("Configure a GEMINI_API_KEY nos Secrets.")
             return
 
-        # 1. Exibe e salva a mensagem do usuário
+        # 1. Exibe e salva a mensagem do usuário na nuvem
         with st.chat_message("user"):
             st.markdown(user_prompt)
-        save_chat_message("user", user_prompt)
+        save_chat_message_supabase("user", user_prompt)
         chat_history.append({"role": "user", "content": user_prompt})
 
-        # 2. Prepara a instrução de sistema usando o perfil ativo + memórias
+        # 2. Verificação de auto-salvamento inteligente (Ideias / Pensamento crítico / Comando explícito)
+        learned_item = auto_detect_and_save_knowledge(gemini_api_key, user_prompt)
+        if learned_item:
+            content_learned, cat_learned = learned_item
+            add_memory_to_supabase(content_learned, cat_learned)
+            st.toast(f"💡 EGO aprendeu ({cat_learned}): {content_learned}", icon="🧠")
+            # Recarrega as memórias para incluir a nova descoberta imediatamente
+            memories = get_memories_from_supabase()
+
+        # 3. Constrói instrução de sistema atualizada com as memórias dinâmicas
         active_profile = st.session_state.get("profile_input", "")
         system_instruction = build_system_instruction(active_profile, memories)
 
-        # 3. Chama o Gemini e exibe a resposta
+        # 4. Chama o Gemini e responde
         with st.chat_message("assistant"):
             with st.spinner("Pensando..."):
                 reply = call_gemini_api(
@@ -503,7 +457,7 @@ def main() -> None:
                 )
                 st.markdown(reply)
 
-        save_chat_message("assistant", reply)
+        save_chat_message_supabase("assistant", reply)
 
 
 if __name__ == "__main__":
