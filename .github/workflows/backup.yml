@@ -2,8 +2,9 @@ name: Backup Supabase para Telegram
 
 on:
   schedule:
-    - cron: '0 0 * * *' # Roda todo dia à meia-noite (UTC)
-  workflow_dispatch: # Permite rodar manualmente a qualquer momento
+    # Roda a cada 10 minutos
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
 
 jobs:
   backup:
