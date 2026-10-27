@@ -1305,9 +1305,9 @@ def main() -> None:
                     user_prompt=prompt_for_model,
                     current_file_parts=file_parts,
                 )
-               st.markdown(reply)
+st.markdown(reply)
 
-    # --- Blindagem contra erro de variável vazia ---
+    # --- Toca a voz real gerada pelo ElevenLabs ---
     if 'reply' in locals() and reply:
         audio_voz = falar_com_elevenlabs(reply)
         if audio_voz:
@@ -1315,6 +1315,5 @@ def main() -> None:
 
     save_chat_message_supabase("assistant", reply)
     st.rerun()
-
 if __name__ == "__main__":
     main()
