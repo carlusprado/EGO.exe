@@ -1307,8 +1307,13 @@ def main() -> None:
                 )
                 st.markdown(reply)
 
-        save_chat_message_supabase("assistant", reply)
-        st.rerun()
+    # --- Toca a voz real gerada pelo ElevenLabs ---
+    audio_voz = falar_com_elevenlabs(reply)
+    if audio_voz:
+        st.audio(audio_voz, format="audio/mp3", autoplay=True)
+
+    save_chat_message_supabase("assistant", reply)
+    st.rerun()
 
 
 if __name__ == "__main__":
