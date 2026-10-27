@@ -11,33 +11,6 @@ import streamlit as st
 import streamlit.components.v1 as components
 from supabase import Client, create_client
 
-import requests
-import streamlit as st
-
-def falar_com_elevenlabs(texto):
-    api_key = st.secrets.get("ELEVENLABS_API_KEY", "sk_a49df4ec967c4dcf93ad3866c17ef6e536dedbc71546619a")
-    voice_id = st.secrets.get("ELEVENLABS_VOICE_ID", "NQ10OlqJ7vYH6XwegHSW")
-    
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
-    headers = {
-        "Accept": "audio/mpeg",
-        "Content-Type": "application/json",
-        "xi-api-key": api_key
-    }
-    data = {
-        "text": texto,
-        "model_id": "eleven_multilingual_v2",
-        "voice_settings": {
-            "stability": 0.5,
-            "similarity_boost": 0.75
-        }
-    }
-    
-    response = requests.post(url, json=data, headers=headers)
-    if response.status_code == 200:
-        return response.content
-    return None
-
 # ==========================================
 # CONFIGURAÇÃO DA PÁGINA & VERSÃO DO KERNEL
 # ==========================================
@@ -1305,15 +1278,11 @@ def main() -> None:
                     user_prompt=prompt_for_model,
                     current_file_parts=file_parts,
                 )
-st.markdown(reply)
+                st.markdown(reply)
 
-    # --- Toca a voz real gerada pelo ElevenLabs ---
-    if 'reply' in locals() and reply:
-        audio_voz = falar_com_elevenlabs(reply)
-        if audio_voz:
-            st.audio(audio_voz, format="audio/mp3", autoplay=True)
+        save_chat_message_supabase("assistant", reply)
+        st.rerun()
 
-    save_chat_message_supabase("assistant", reply)
-    st.rerun()
+
 if __name__ == "__main__":
     main()
