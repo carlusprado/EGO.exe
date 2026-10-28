@@ -10,11 +10,11 @@ import requests
 # ==========================================
 # 1. CONFIG (Secrets do GitHub Actions)
 # ==========================================
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "").strip()
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
 # Regra de ociosidade: 4 minutos exatos, comparada em SEGUNDOS (sem round()).
 LIMITE_OCIOSIDADE_HORAS = 4 / 60
@@ -36,12 +36,16 @@ HTTP_TIMEOUT = 20
 FUSO_BR = timezone(timedelta(hours=-3))
 MARCADOR_AUTONOMO = "⚡ *[Iniciativa própria via Telegram]*"
 
-HEADERS_SUPA = {
-    "apikey": SUPABASE_KEY,
-    "Authorization": f"Bearer {SUPABASE_KEY}",
-    "Content-Type": "application/json",
-    "Prefer": "return=minimal",
-}
+def montar_headers_supabase(chave):
+    """Chaves novas (sb_secret_...) NÃO são JWT: vão só no header apikey.
+    Chaves legadas (JWT anon/service_role) vão no apikey e no Bearer."""
+    h = {"apikey": chave, "Content-Type": "application/json", "Prefer": "return=minimal"}
+    if not chave.startswith("sb_"):
+        h["Authorization"] = f"Bearer {chave}"
+    return h
+
+
+HEADERS_SUPA = montar_headers_supabase(SUPABASE_KEY)
 
 
 # ==========================================
@@ -296,6 +300,10 @@ def main():
         msgs, mems = buscar_dados_supabase()
     except (requests.RequestException, ValueError) as e:
         print("Falha ao ler o Supabase:", e)
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        if status in (401, 403):
+            print("Dica: SUPABASE_KEY inválida pra esse projeto. Use a chave secret (sb_secret_...) ou service_role "
+                  "do MESMO projeto da SUPABASE_URL, sem espaços/aspas, e não a publishable/anon.")
         return 1
 
     deve_enviar, motivo, ociosidade = avaliar_envio(msgs)
