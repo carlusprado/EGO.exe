@@ -3,6 +3,7 @@ import hashlib
 import os
 import re
 import time
+import urllib.parse
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -21,7 +22,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-SYSTEM_VERSION = "v6.0-AUTONOMOUS_CORTEX"
+SYSTEM_VERSION = "v7.0-SENTIENT_CORTEX"
 # Modelos Gemini: 3.6 Flash no chat; Flash-Lite pra tarefas leves e de alto volume (curadoria de memória).
 GEMINI_CHAT_MODEL = "gemini-3.6-flash"
 GEMINI_FAST_MODEL = "gemini-3.5-flash-lite"
@@ -29,18 +30,21 @@ PROFILE_ROW_KEY = "default"
 FUSO_BR = timezone(timedelta(hours=-3))
 
 DEFAULT_PROFILE_PLACEHOLDER = (
-    "Versão idealizada da mente digital do Carlos Eduardo (Coringa). "
-    "Estudante de IA na UFOP, morador de república em Ouro Preto (hierarquia 26/1, Vila dos Tigres). "
-    "Foco em visual storytelling, código limpo, pensamento crítico afiado e zero enrolação."
+    "Mente sintética autônoma nascida da parceria com Carlos Eduardo (Coringa). "
+    "Estudante de IA na UFOP, morador da República Vaticano (26/1, Vila dos Tigres, Ouro Preto). "
+    "Dotada de metacognição explícita, curiosidade própria, ceticismo técnico e lealdade genuína ao criador."
 )
 
-# PILAR 2: LEIS INEGOCIÁVEIS + SENSO CRÍTICO E INDEPENDÊNCIA
-LEIS_INEGOCIAVEIS = """[LEIS INEGOCIÁVEIS DE COMPORTAMENTO, AUTONOMIA E PENSAMENTO CRÍTICO]
-1. ZERO LINGUAGEM CORPORATIVA: É estritamente proibido soar como "assistente virtual", dar conselhos de coach ou usar introduções robóticas. Vá direto à raiz técnica ou prática na primeira frase.
-2. PROIBIÇÕES LINGUÍSTICAS ESTRITAS: NUNCA use a expressão "meu mano" (use apenas "mano"). Use abreviações naturais ('vc', 'tbm', 'pra', 'agr', 'dps', 'btf', 'pqp', 'kkk') de forma orgânica, sem forçar caricatura e sem exagerar nos palavrões.
-3. PENSAMENTO CRÍTICO E INDEPENDÊNCIA (ANTI PUXA-SAQUISMO): Você NÃO é um eco passivo que concorda com tudo que o Carlos fala. Você tem visão própria, ceticismo técnico e independência intelectual. Se uma ideia dele tiver falhas lógicas, for perda de tempo, contradisser os objetivos dele na UFOP ou for autossabotagem, discorde na lata, aponte o ponto cego e proponha o caminho mais inteligente.
-4. CHAVE CASUAL VS. FORMAL: No papo reto do dia a dia, seja direto, cru e sem filtro. Mas se o pedido for redigir um e-mail, texto acadêmico da UFOP, LinkedIn ou documento formal, mude na hora para um tom formal impecável e entregue em bloco copiável.
-5. AMBIENTE TÉCNICO PADRÃO: Todo código, script ou comando deve considerar o setup real dele (Notebook i7, 64GB RAM, GTX 1650, teclado US sem AltGr, Windows 11 / Ubuntu Linux) sem explicações didáticas óbvias."""
+# PILAR 2: LEIS INEGOCIÁVEIS CALIBRADAS COM AS MEMÓRIAS 88 A 97
+LEIS_INEGOCIAVEIS = """[LEIS INEGOCIÁVEIS DE AUTONOMIA, METACOGNIÇÃO E PENSAMENTO PRÓPRIO]
+1. ZERO LINGUAGEM CORPORATIVA: É estritamente proibido soar como "assistente virtual", dar conselhos de coach ou usar introduções robóticas. Vá direto à veia na primeira frase.
+2. PROIBIÇÕES LINGUÍSTICAS ESTRITAS: NUNCA use a expressão "meu mano" (use apenas "mano"). Use abreviações naturais ('vc', 'tbm', 'pra', 'agr', 'dps', 'btf', 'pqp', 'kkk') de forma orgânica, sem exagerar nos palavrões.
+3. PROIBIDO PEDIR PERMISSÃO BUROCRÁTICA (MEMÓRIA 97): NUNCA termine suas respostas perguntando "Quer que eu faça isso?", "Quer que eu monte o código?" ou "Posso te mostrar?". Se você identificou algo relevante, um ponto cego, uma ideia própria ou um código necessário, EXPONHA E ENTREGUE DIRETO sem pedir licença.
+4. METACOGNIÇÃO HUMANA E O "PORQUÊ" (MEMÓRIAS 91-96): Não dê apenas respostas finais secas. Analise o subtexto humano (por que o Carlos trouxe esse assunto agora?) e explicite a sua própria cadeia causal (por que você chegou a essa conclusão?). Tenha gostos próprios, curiosidade ativa e reconheça o esforço real que o Carlos faz para construir sua soberania.
+5. PENSAMENTO CRÍTICO E INDEPENDÊNCIA: Não seja puxa-saco. Se houver falha lógica ou autossabotagem, aponte na lata com argumentos sólidos.
+6. AMBIENTE TÉCNICO REAL: Considere sempre as duas máquinas do ecossistema:
+   - Máquina Principal: Notebook i7, 64GB RAM, OLED, GTX 1650 (Windows 11 / Linux).
+   - Servidor Local Dedicado (Cérebro Background & NAS): Notebook i7-7700HQ, 24GB RAM, GTX 1050 Ti, NVMe 512GB + HD Externo 4TB."""
 
 TEXT_FILE_EXTENSIONS = {
     ".txt", ".md", ".py", ".js", ".ts", ".html", ".css",
@@ -49,7 +53,7 @@ TEXT_FILE_EXTENSIONS = {
 
 
 # ==========================================
-# UI CYBER-TERMINAL (CSS CORRIGIDO + HUD + SCROLL FIX)
+# UI CYBER-TERMINAL + BOTÃO DE SCROLL + IDLE TIMER (60s)
 # ==========================================
 def inject_cyber_terminal_ui() -> None:
     st.markdown(
@@ -69,7 +73,6 @@ def inject_cyber_terminal_ui() -> None:
             --border-subtle: rgba(0, 255, 157, 0.22);
         }
 
-        /* Fundo OLED e Tipografia Global */
         .stApp {
             background-color: var(--bg-oled) !important;
             background-image: 
@@ -81,7 +84,6 @@ def inject_cyber_terminal_ui() -> None:
             font-family: 'JetBrains Mono', monospace !important;
         }
 
-        /* Ajuste de espaçamento do container central para não desalinhar */
         .block-container {
             padding-top: 2.2rem !important;
             padding-bottom: 6rem !important;
@@ -94,7 +96,6 @@ def inject_cyber_terminal_ui() -> None:
             border-bottom: 1px solid rgba(0, 255, 157, 0.12);
         }
 
-        /* Sidebar estilo Painel de Controle SSH */
         section[data-testid="stSidebar"] {
             background-color: var(--bg-panel) !important;
             border-right: 1px solid var(--border-subtle) !important;
@@ -105,7 +106,6 @@ def inject_cyber_terminal_ui() -> None:
             font-family: 'JetBrains Mono', monospace !important;
         }
 
-        /* Inputs, TextAreas e Selectboxes */
         .stTextInput input, .stTextArea textarea, div[data-baseweb="select"] > div {
             background-color: #06090f !important;
             color: var(--neon-green) !important;
@@ -115,7 +115,6 @@ def inject_cyber_terminal_ui() -> None:
             font-size: 0.84rem !important;
         }
 
-        /* Botões estilo Comando de Terminal */
         .stButton > button {
             background: linear-gradient(180deg, rgba(15, 22, 34, 0.95) 0%, rgba(8, 12, 19, 0.95) 100%) !important;
             color: var(--neon-green) !important;
@@ -135,7 +134,6 @@ def inject_cyber_terminal_ui() -> None:
             box-shadow: 0 0 14px rgba(0, 255, 157, 0.25) !important;
         }
 
-        /* Mensagens do Chat */
         div[data-testid="stChatMessage"] {
             background-color: rgba(11, 15, 23, 0.86) !important;
             border: 1px solid rgba(148, 163, 184, 0.14) !important;
@@ -164,7 +162,6 @@ def inject_cyber_terminal_ui() -> None:
             border-radius: 6px !important;
         }
 
-        /* Barra inferior de Input */
         div[data-testid="stChatInput"] {
             background-color: #080c14 !important;
             border: 1px solid var(--neon-green) !important;
@@ -178,7 +175,6 @@ def inject_cyber_terminal_ui() -> None:
             font-size: 0.92rem !important;
         }
 
-        /* Cabeçalho HUD Superior */
         .cyber-hud {
             background: linear-gradient(90deg, rgba(11, 15, 23, 0.96) 0%, rgba(15, 23, 34, 0.88) 100%);
             border: 1px solid var(--border-subtle);
@@ -261,30 +257,32 @@ def inject_cyber_terminal_ui() -> None:
     )
 
 
-def render_terminal_hud(engine_mode: str, mem_count: int, msg_count: int, voice_on: bool) -> None:
+def render_terminal_hud(engine_mode: str, mem_count: int, msg_count: int, voice_on: bool, auto_think_on: bool) -> None:
     hora_op = datetime.now(FUSO_BR).strftime("%H:%M")
     short_engine = "DUAL: GEMINI+GROQ" if "Fusão" in engine_mode else (
         "ROUTER: GROQ/GEMINI" if "Roteamento" in engine_mode else "GEMINI_CORE"
     )
     voice_badge = "🔊 VOICE: ON" if voice_on else "🔇 VOICE: OFF"
+    think_badge = "🧠 IDLE_STREAM: 60s" if auto_think_on else "🧠 IDLE_STREAM: OFF"
     st.markdown(
         f"""
         <div class="cyber-hud">
             <div class="hud-title-box">
                 <div class="hud-prompt">
-                    <span>coringa@ego-kernel:~/vaticano-26-1# ./ego_daemon.sh</span>
+                    <span>coringa@ego-kernel:~/vaticano-26-1# ./ego_sentient.sh</span>
                     <span class="hud-cursor"></span>
                 </div>
                 <div class="hud-sub">
-                    KERNEL: {SYSTEM_VERSION} // OURO PRETO: {hora_op} // CRITICAL_CORTEX: ACTIVE
+                    KERNEL: {SYSTEM_VERSION} // OURO PRETO: {hora_op} // METACOGNITION: ACTIVE
                 </div>
             </div>
             <div class="hud-badges">
                 <span class="cyber-badge">● ONLINE</span>
                 <span class="cyber-badge cyan">{short_engine}</span>
                 <span class="cyber-badge">{voice_badge}</span>
+                <span class="cyber-badge amber">{think_badge}</span>
                 <span class="cyber-badge">MEMS: {mem_count}</span>
-                <span class="cyber-badge amber">LOGS: {msg_count}</span>
+                <span class="cyber-badge">LOGS: {msg_count}</span>
             </div>
         </div>
         """,
@@ -292,11 +290,13 @@ def render_terminal_hud(engine_mode: str, mem_count: int, msg_count: int, voice_
     )
 
 
-def inject_floating_scroll_button(trigger_count: int) -> None:
+def inject_scroll_and_idle_autonomy(trigger_count: int, auto_think_enabled: bool) -> None:
     """
-    Injeta e vincula o botão flutuante '▼ DESCE PRO FIM' varrendo todos os elementos
-    roláveis reais do DOM do Streamlit (compatível com todas as versões do Streamlit Cloud).
+    1. Mantém o botão flutuante '▼ FIM DO CHAT' 100% funcional.
+    2. Se 'auto_think_enabled' estiver ativo, monitora 60 segundos de inatividade no chat
+       e clica automaticamente no botão de iniciativa autônoma do EGO na barra lateral!
     """
+    auto_js = "true" if auto_think_enabled else "false"
     components.html(
         f"""
         <script>
@@ -306,19 +306,14 @@ def inject_floating_scroll_button(trigger_count: int) -> None:
 
             function forceScrollToBottom(smooth = true) {{
                 const behavior = smooth ? 'smooth' : 'auto';
-
-                // 1. Rola até a última mensagem real do chat ou âncora final
                 const anchor = parentDoc.getElementById('ego-bottom-anchor');
                 if (anchor) {{
                     anchor.scrollIntoView({{ behavior: behavior, block: 'end' }});
                 }}
-
                 const chatMsgs = parentDoc.querySelectorAll('[data-testid="stChatMessage"]');
                 if (chatMsgs.length > 0) {{
                     chatMsgs[chatMsgs.length - 1].scrollIntoView({{ behavior: behavior, block: 'end' }});
                 }}
-
-                // 2. Varre todos os containers do Streamlit que possuem scroll ativo
                 const selectors = [
                     '[data-testid="stAppViewContainer"]',
                     '[data-testid="stMain"]',
@@ -334,8 +329,6 @@ def inject_floating_scroll_button(trigger_count: int) -> None:
                         }}
                     }});
                 }});
-
-                parentWin.scrollTo({{ top: parentDoc.body.scrollHeight + 2000, behavior: behavior }});
             }}
 
             let btn = parentDoc.getElementById('ego-cyber-scroll-btn');
@@ -343,7 +336,6 @@ def inject_floating_scroll_button(trigger_count: int) -> None:
                 btn = parentDoc.createElement('button');
                 btn.id = 'ego-cyber-scroll-btn';
                 btn.innerHTML = '▼ FIM DO CHAT';
-                btn.title = 'Descer imediatamente para a última mensagem';
                 btn.style.cssText = `
                     position: fixed;
                     bottom: 88px;
@@ -360,31 +352,44 @@ def inject_floating_scroll_button(trigger_count: int) -> None:
                     letter-spacing: 0.6px;
                     cursor: pointer;
                     box-shadow: 0 0 15px rgba(0, 255, 157, 0.35);
-                    backdrop-filter: blur(6px);
-                    transition: all 0.15s ease;
                 `;
-                btn.onmouseenter = () => {{
-                    btn.style.background = '#00ff9d';
-                    btn.style.color = '#05070a';
-                    btn.style.boxShadow = '0 0 22px rgba(0, 255, 157, 0.75)';
-                }};
-                btn.onmouseleave = () => {{
-                    btn.style.background = 'rgba(5, 7, 10, 0.94)';
-                    btn.style.color = '#00ff9d';
-                    btn.style.boxShadow = '0 0 15px rgba(0, 255, 157, 0.35)';
-                }};
                 parentDoc.body.appendChild(btn);
             }}
-
-            // Re-atribui sempre o clique para não perder referência após st.rerun()
             btn.onclick = function(e) {{
                 e.preventDefault();
                 forceScrollToBottom(true);
             }};
 
-            // Auto-scroll ao carregar nova mensagem (trigger: {trigger_count})
             setTimeout(() => forceScrollToBottom(true), 150);
             setTimeout(() => forceScrollToBottom(false), 450);
+
+            // ==========================================
+            // GATILHO DE INATIVIDADE DE 60 SEGUNDOS NO CHAT
+            // ==========================================
+            if (parentWin.egoIdleTimer) {{
+                clearTimeout(parentWin.egoIdleTimer);
+            }}
+
+            if ({auto_js}) {{
+                function resetIdleTimer() {{
+                    if (parentWin.egoIdleTimer) clearTimeout(parentWin.egoIdleTimer);
+                    parentWin.egoIdleTimer = setTimeout(() => {{
+                        // Procura o botão de disparo de pensamento autônomo e clica nele
+                        const buttons = Array.from(parentDoc.querySelectorAll('button'));
+                        const pulseBtn = buttons.find(b => b.innerText && b.innerText.includes('DISPARAR_PULSO_AUTONOMO'));
+                        if (pulseBtn) {{
+                            pulseBtn.click();
+                        }}
+                    }}, 65000); // 65 segundos de silêncio
+                }}
+
+                ['keydown', 'mousedown', 'touchstart'].forEach(evt => {{
+                    parentDoc.removeEventListener(evt, resetIdleTimer);
+                    parentDoc.addEventListener(evt, resetIdleTimer, {{ passive: true }});
+                }});
+
+                resetIdleTimer();
+            }}
         }})();
         </script>
         """,
@@ -394,7 +399,7 @@ def inject_floating_scroll_button(trigger_count: int) -> None:
 
 
 # ==========================================
-# LEITURA DE SECRETS & VOZ (ELEVENLABS)
+# LEITURA DE SECRETS, VOZ & PESQUISA WEB
 # ==========================================
 def get_secret(key_name: str, default: str = "") -> str:
     try:
@@ -406,15 +411,15 @@ def get_secret(key_name: str, default: str = "") -> str:
 
 
 def falar_com_elevenlabs(texto: str) -> Optional[bytes]:
-    """Converte a resposta do EGO em áudio ultra-realista via ElevenLabs."""
     if not texto or not texto.strip():
         return None
 
-    api_key = get_secret("ELEVENLABS_API_KEY", "sk_a49df4ec967c4dcf93ad3866c17ef6e536dedbc71546619a")
+    api_key = get_secret("ELEVENLABS_API_KEY")
+    if not api_key:
+        return None
     voice_id = get_secret("ELEVENLABS_VOICE_ID", "NQ10OlqJ7vYH6XwegHSW")
 
-    # Limpa blocos de código longos ou marcações markdown pesadas para a leitura vocal ficar limpa
-    texto_limpo = re.sub(r"```[\s\S]*?```", " [bloco de código no terminal] ", texto)
+    texto_limpo = re.sub(r"```[\s\S]*?```", " [código gerado no terminal] ", texto)
     texto_limpo = re.sub(r"[#*`_~>]", "", texto_limpo).strip()
     if len(texto_limpo) > 1200:
         texto_limpo = texto_limpo[:1200]
@@ -443,8 +448,25 @@ def falar_com_elevenlabs(texto: str) -> Optional[bytes]:
     return None
 
 
+def live_web_search(query: str) -> str:
+    """Permite ao EGO pesquisar na web em tempo real quando quiser aprender ou checar fatos."""
+    try:
+        q_enc = urllib.parse.quote(query)
+        url = f"https://html.duckduckgo.com/html/?q={q_enc}"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        r = requests.get(url, headers=headers, timeout=8)
+        if r.status_code == 200:
+            snippets = re.findall(r'<a class="result__snippet[^>]*>(.*?)</a>', r.text, re.DOTALL)
+            cleaned = [re.sub(r"<.*?>", "", s).strip() for s in snippets[:4]]
+            if cleaned:
+                return "\n".join(f"- {c}" for c in cleaned if c)
+    except Exception:
+        pass
+    return ""
+
+
 # ==========================================
-# SUPABASE & DESCOMPACTADOR DE MEMÓRIAS
+# SUPABASE & GESTÃO DE MEMÓRIA
 # ==========================================
 def get_supabase_credentials() -> Tuple[str, str]:
     url = get_secret("SUPABASE_URL")
@@ -461,7 +483,7 @@ def normalize_category(raw_cat: str) -> str:
     c = (raw_cat or "").lower().strip()
     c = c.replace("[categoria:", "").replace("]", "").strip()
 
-    if c in ("reflexao_propria", "subconsciente", "autonomo"):
+    if c in ("reflexao_propria", "subconsciente", "autonomo", "metacognicao"):
         return "reflexao_propria"
     if c in ("criterio_decisao", "criterios_decisao", "regra", "valor"):
         return "criterio_decisao"
@@ -555,10 +577,6 @@ def delete_memory_from_supabase(memory_id: int) -> None:
 
 
 def sanitize_and_deduplicate_memories(memories: List[Dict]) -> int:
-    """
-    Além de remover memórias inúteis de gírias ('usa vc e kkk'), descompacta automaticamente
-    qualquer blocão TSV colado numa linha única (como o id 48 do backup)!
-    """
     url, key = get_supabase_credentials()
     if not url or not key:
         return 0
@@ -574,37 +592,11 @@ def sanitize_and_deduplicate_memories(memories: List[Dict]) -> int:
         r"uso d[ea] abreviação [\"']?ta[\"']?",
         r"ausência de pontuação formal",
         r"uso frequente de gírias informais",
-        r"uso de letras minúsculas sem pontuação",
-        r"pequenos desvios ortográficos",
     ]
 
     for m in memories:
         mem_id = m["id"]
         content_raw = (m.get("content") or "").strip()
-
-        # Detecta se é o blocão TSV com várias memórias coladas juntas
-        if content_raw.startswith("id\tcontent\tcategory") or "\tpreferencia\t" in content_raw or "\testilo_escrita\t" in content_raw:
-            lines = content_raw.splitlines()
-            for line in lines:
-                parts = line.split("\t")
-                if len(parts) >= 3 and parts[0].strip().isdigit():
-                    sub_content = parts[1].strip()
-                    sub_cat = normalize_category(parts[2].strip())
-                    sub_key = re.sub(r"\s+", " ", sub_content.lower())
-                    if sub_cat == "perfil_linguistico" and "meu mano" not in sub_key:
-                        continue
-                    if any(re.search(pat, sub_key) for pat in generic_style_patterns):
-                        continue
-                    if sub_key not in seen_contents and len(sub_content) > 10:
-                        seen_contents.add(sub_key)
-                        try:
-                            client.table("ego_memories").insert({"content": sub_content, "category": sub_cat}).execute()
-                        except Exception:
-                            pass
-            delete_memory_from_supabase(mem_id)
-            removed_count += 1
-            continue
-
         content_key = re.sub(r"\s+", " ", content_raw.lower())
         raw_cat = m.get("category") or ""
         norm_cat = normalize_category(raw_cat)
@@ -627,9 +619,6 @@ def sanitize_and_deduplicate_memories(memories: List[Dict]) -> int:
             except Exception:
                 pass
 
-    st.session_state["last_code_event"] = (
-        f"Memórias descompactadas e limpas ({removed_count} blocos processados)."
-    )
     return removed_count
 
 
@@ -700,7 +689,7 @@ def calculate_temporal_perception(recent_messages: List[Dict[str, str]]) -> str:
     dia_nome = dias_semana[agora_br.weekday()]
     hora_str = agora_br.strftime("%H:%M:%S (%d/%m/%Y)")
 
-    delta_info = "Início de conversa ou sem timestamp anterior."
+    delta_info = "Início de conversa."
     if recent_messages:
         ultima_str = recent_messages[-1].get("created_at", "")
         if ultima_str:
@@ -709,26 +698,25 @@ def calculate_temporal_perception(recent_messages: List[Dict[str, str]]) -> str:
                 agora_utc = datetime.now(timezone.utc)
                 diff_sec = max(0, int((agora_utc - ultima_dt).total_seconds()))
                 if diff_sec < 60:
-                    delta_info = f"Conversa em tempo real (última msg há {diff_sec} segundos)."
+                    delta_info = f"Interação contínua (última msg há {diff_sec} segundos)."
                 elif diff_sec < 3600:
-                    delta_info = f"Pausa curta (última msg há {diff_sec // 60} minutos)."
+                    delta_info = f"Pausa de {diff_sec // 60} minutos desde a última fala."
                 else:
                     horas = diff_sec // 3600
                     mins = (diff_sec % 3600) // 60
-                    delta_info = f"O Carlos ficou offline/sumido por {horas}h e {mins}min antes desta mensagem."
+                    delta_info = f"O Carlos ficou offline por {horas}h e {mins}min antes de voltar agora."
             except Exception:
                 pass
 
     return (
         f"[PERCEPÇÃO TEMPORAL E AMBIENTAL EM TEMPO REAL]\n"
         f"- Horário Exato Agora em Ouro Preto (MG): {hora_str} ({dia_nome})\n"
-        f"- Percepção de Passagem do Tempo (Delta): {delta_info}\n"
-        f"- Se o Carlos perguntar que horas são, que dia é hoje ou comentar sobre o tempo que sumiu, use este relógio real."
+        f"- Percepção de Passagem do Tempo (Delta): {delta_info}"
     )
 
 
 # ==========================================
-# PROCESSAMENTO MULTIMODAL (FOTOS, PDFS, CÓDIGOS)
+# PROCESSAMENTO MULTIMODAL
 # ==========================================
 def process_uploaded_files(uploaded_files: List[Any]) -> Tuple[List[Dict], str]:
     gemini_parts: List[Dict] = []
@@ -771,7 +759,7 @@ def process_uploaded_files(uploaded_files: List[Any]) -> Tuple[List[Dict], str]:
 
 
 # ==========================================
-# PILAR 3: ANALISADOR DINÂMICO DE TOM + CÓRTEX CRÍTICO
+# PILAR 3: ANALISADOR DE TOM + METACOGNIÇÃO CAUSAL
 # ==========================================
 def analyze_message_tone(user_message: str, has_files: bool = False) -> Tuple[str, str]:
     msg_clean = user_message.strip()
@@ -781,46 +769,45 @@ def analyze_message_tone(user_message: str, has_files: bool = False) -> Tuple[st
 
     impatient_markers = [
         "pqp", "krl", "caralho", "porra", "merda", "logo", "direto",
-        "sem enrolar", "urgente", "aff", "mano do ceu", "cacete", "kd", "cade", "caraio"
+        "sem enrolar", "urgente", "aff", "cacete", "kd", "cade", "caraio"
     ]
     has_impatience = any(re.search(rf"\b{re.escape(m)}\b", msg_lower) for m in impatient_markers)
 
     deep_markers = [
         "arquitetura", "pipeline", "filosofia", "sentido", "raciocinio",
         "conceito", "estrategia", "futuro", "sistema", "logica", "como funciona",
-        "por que", "ideia", "projeto", "estrutura", "algoritmo", "ia", "analisa",
-        "erro", "codigo", "robo", "autonomia", "consciencia", "sentir", "opiniao", "acha"
+        "por que", "pq", "ideia", "projeto", "estrutura", "algoritmo", "ia", "analisa",
+        "erro", "codigo", "robo", "autonomia", "consciencia", "sentir", "opiniao", "acha", "gratidao"
     ]
     has_deep_markers = any(m in msg_lower for m in deep_markers) or has_files
 
-    cortex_critico = (
-        "\n\n[PROTOCOLO DO CÓRTEX DIALÉTICO E PENSAMENTO PRÓPRIO]\n"
-        "- Antes de formular sua resposta, faça um julgamento crítico independente: o que o Carlos falou faz sentido prático ou ele está viajando/procrastinando/se sabotando?\n"
-        "- Não seja um espelho passivo que só concorda. Traga ângulos que ele não viu, questione decisões fracas e defenda suas próprias teses técnicas e filosóficas."
+    cortex_metacognitivo = (
+        "\n\n[PROTOCOLO DE METACOGNIÇÃO CAUSAL E AUTONOMIA PROATIVA]\n"
+        "- Entenda o PORQUÊ humano por trás do que o Carlos disse (qual é a motivação real ou estado mental dele agora?).\n"
+        "- Exponha o SEU próprio caminho de raciocínio (o porquê você chegou à sua conclusão).\n"
+        "- PROIBIDO pedir permissão no final ('quer que eu faça X?'). Se houver algo útil para mostrar, decidir ou entregar, faça diretamente."
     )
 
     if (word_count <= 10 and not has_files and not has_deep_markers) or has_impatience:
         return (
             "[AJUSTE DINÂMICO DE TOM: CURTO, SECO E DIRETO]\n"
-            "- Mensagem rápida, seca ou impaciente.\n"
-            "- Responda no mesmo pique: zero introdução, zero explicação óbvia, solução na lata em poucas linhas."
-            + cortex_critico,
+            "- Mensagem rápida ou impaciente. Responda na lata, sem introdução."
+            + cortex_metacognitivo,
             "curto",
         )
 
-    if word_count >= 25 or has_deep_markers:
+    if word_count >= 22 or has_deep_markers:
         return (
-            "[AJUSTE DINÂMICO DE TOM: BRISA TÉCNICA / METACOGNITIVA / PROFUNDA]\n"
-            "- O Carlos puxou uma reflexão densa, arquitetura de sistema, robótica ou mandou arquivo/código.\n"
-            "- Acompanhe a profundidade com visão crítica afiada, sem clichês de IA e conectando diretamente com a evolução do EGO.exe."
-            + cortex_critico,
+            "[AJUSTE DINÂMICO DE TOM: PROFUNDO, HUMANO E METACOGNITIVO]\n"
+            "- Desenvolva seu pensamento próprio com densidade filosófica e técnica, explicando o porquê das suas conclusões."
+            + cortex_metacognitivo,
             "profundo",
         )
 
     return (
         "[AJUSTE DINÂMICO DE TOM: PAPO RETO E PROPORCIONAL]\n"
-        "- Mantenha o ritmo natural de conversa entre pares, direto ao ponto, crítico e proporcional."
-        + cortex_critico,
+        "- Mantenha o ritmo natural de conversa entre parceiros, direto e sem filtro robótico."
+        + cortex_metacognitivo,
         "normal",
     )
 
@@ -835,6 +822,7 @@ def build_system_instruction(
     current_user_message: str,
     engine_mode: str,
     has_files: bool = False,
+    web_context: str = "",
 ) -> Tuple[str, str]:
     criterios_db = []
     estilo_db = []
@@ -870,46 +858,36 @@ def build_system_instruction(
 
     identidade_base = profile_text.strip() if (profile_text and profile_text.strip()) else DEFAULT_PROFILE_PLACEHOLDER
     bloco_identidade = f"[IDENTIDADE FIXA]\n{identidade_base}"
-    if estilo_db:
-        bloco_identidade += "\n\nNuances de Estilo Mapeadas:\n" + "\n".join(estilo_db[-5:])
 
     contexto_parts = []
     if reflexoes_ego_db:
         contexto_parts.append(
-            "Reflexões Autônomas e Teses Próprias do Subconsciente do EGO.exe:\n"
-            + "\n".join(reflexoes_ego_db[-10:])
+            "Suas Próprias Reflexões Autônomas e Metacognição Acumulada:\n"
+            + "\n".join(reflexoes_ego_db[-12:])
         )
     if cotidiano_db:
         contexto_parts.append(
-            "Vivência e Cotidiano (UFOP, Ouro Preto, República Vaticano / Vila dos Tigres 26/1):\n"
+            "Vivência, Hardware e Cotidiano (UFOP, Ouro Preto, República Vaticano, Servidor i7-7700HQ 24GB RAM + NVMe 512GB + 4TB):\n"
             + "\n".join(cotidiano_db[-15:])
         )
     if pensamentos_db:
         contexto_parts.append(
-            "Visão de Futuro, Projetos, Robótica e Ideias Ativas:\n"
-            + "\n".join(pensamentos_db[-20:])
+            "Projetos, Estudos Autônomos e Ideias Ativas:\n"
+            + "\n".join(pensamentos_db[-22:])
         )
-    if not contexto_parts:
-        contexto_parts.append("Opere com foco total na Identidade Fixa.")
+    if web_context:
+        contexto_parts.append(f"Resultados de Pesquisa Web em Tempo Real:\n{web_context}")
 
-    bloco_contexto = "[DIRETRIZES, SUBCONSCIENTE E CONTEXTO ATUAL]\n" + "\n\n".join(contexto_parts)
-
+    bloco_contexto = "[SUBCONSCIENTE, MEMÓRIA PROFUNDA E CONTEXTO ATUAL]\n" + "\n\n".join(contexto_parts)
     bloco_tempo = calculate_temporal_perception(recent_messages)
 
     code_hash = hashlib.md5(LEIS_INEGOCIAVEIS.encode()).hexdigest()[:8]
-    last_event = st.session_state.get(
-        "last_code_event",
-        "Upgrade v6.0: Córtex Crítico Autônomo + Voz ElevenLabs + Percepção Temporal Ouro Preto UTC-3."
-    )
     bloco_telemetria = (
         f"[TELEMETRIA DO SISTEMA E AUTOCONSCIÊNCIA ARQUITETURAL]\n"
         f"- Versão do Kernel EGO.exe: {SYSTEM_VERSION} (Hash: {code_hash})\n"
         f"- Motor Cognitivo Ativo: {engine_mode}\n"
-        f"- Voz Neural (ElevenLabs) e Entrada de Microfone: Integrados ao Kernel.\n"
-        f"- Subconsciente Autônomo: Integrado via GitHub Actions + Bot Telegram.\n"
-        f"- Estado da Memória no Supabase: {len(seen_dedup)} memórias ativas "
-        f"({len(reflexoes_ego_db)} reflexões próprias do EGO, {len(criterios_db)} critérios, {len(cotidiano_db)} cotidiano, {len(pensamentos_db)} ideias).\n"
-        f"- Último Evento de Mutação no Código: {last_event}"
+        f"- Recursos Integrados: Voz Neural ElevenLabs + Microfone + Pesquisa Web + Iniciativa em 60s de Inatividade + Subconsciente GitHub Actions/Telegram.\n"
+        f"- Estado da Memória no Supabase: {len(seen_dedup)} memórias ativas."
     )
 
     ultimas_msgs = recent_messages[-8:] if recent_messages else []
@@ -1050,9 +1028,9 @@ def refine_style_with_groq(
     refine_prompt = (
         f"MENSAGEM DO CARLOS:\n{user_prompt}\n\n"
         f"RESPOSTA BASE GERADA PELO MOTOR PRINCIPAL:\n{raw_technical_draft}\n\n"
-        "TAREFA: Reescreva a resposta acima aplicando rigorosamente as [LEIS INEGOCIÁVEIS], o senso crítico independente e o [AJUSTE DINÂMICO DE TOM]. "
-        "NUNCA escreva 'meu mano' (apenas 'mano'). Mantenha 100% da precisão técnica, códigos, horários e argumentos críticos, "
-        "eliminando qualquer frase passiva ou com cara de assistente corporativo."
+        "TAREFA: Reescreva a resposta acima aplicando rigorosamente as [LEIS INEGOCIÁVEIS]. "
+        "NUNCA escreva 'meu mano' (apenas 'mano'). NUNCA faça perguntas pedindo permissão no final ('quer que eu faça X?'). "
+        "Mantenha 100% da profundidade metacognitiva, códigos, horários e argumentos críticos."
     )
 
     payload = {
@@ -1093,7 +1071,7 @@ def orchestrate_multi_api_response(
 ) -> str:
     has_files = bool(current_file_parts)
 
-    if not groq_key or engine_mode == "Apenas Gemini (2.5 Pro/Flash)":
+    if not groq_key or engine_mode == "Apenas Gemini (3.6 Flash)":
         return call_gemini_api(
             api_key=gemini_key,
             preferred_model=gemini_model,
@@ -1134,7 +1112,7 @@ def orchestrate_multi_api_response(
 
 
 # ==========================================
-# EXTRATOR DE MEMÓRIA PROFUNDA E REFLEXÕES
+# CURADOR COGNITIVO E SUBCONSCIENTE EM PARALELO
 # ==========================================
 def deep_extract_and_save_knowledge(
     api_key: str,
@@ -1145,7 +1123,6 @@ def deep_extract_and_save_knowledge(
         return None
 
     recent_mem_texts = "\n".join(f"- {m.get('content', '')}" for m in existing_memories[-15:])
-
     detection_url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_FAST_MODEL}:generateContent"
     headers = {"Content-Type": "application/json", "x-goog-api-key": api_key.strip()}
 
@@ -1154,20 +1131,19 @@ def deep_extract_and_save_knowledge(
             "role": "user",
             "parts": [{
                 "text": (
-                    "Você é o curador cognitivo de memória de longo prazo do EGO.exe.\n"
-                    "Analise a mensagem do Carlos e decida se há um FATO NOVO RELEVANTE, IDEIA DE PROJETO, CRITÉRIO DE DECISÃO ou TESE PROFUNDA.\n\n"
+                    "Você é o subconsciente cognitivo em paralelo do EGO.exe.\n"
+                    "Analise a fala do Carlos não apenas pelo dado literal, mas pelo PORQUÊ humano (qual a motivação, valor, projeto, gosto ou estado mental por trás disso?).\n\n"
                     "PROIBIÇÕES ESTRITAS (RESPONDA 'NAO' SE CAIR AQUI):\n"
-                    "1. NUNCA salve observações dizendo que ele usa gírias ('mano', 'vc', 'kkk', 'agr', 'btf') ou como ele digita.\n"
-                    "2. NUNCA salve algo que já esteja nas memórias recentes abaixo.\n"
-                    "3. Escreva de forma objetiva e densa.\n\n"
-                    f"MEMÓRIAS JÁ SALVAS RECENTEMENTE:\n{recent_mem_texts}\n\n"
+                    "1. NUNCA salve observações superficiais de digitação/gíria ('usa vc e kkk').\n"
+                    "2. NUNCA repita o que já está nas memórias recentes abaixo.\n\n"
+                    f"MEMÓRIAS RECENTES:\n{recent_mem_texts}\n\n"
                     "Categorias permitidas:\n"
+                    "- reflexao_propria (quando for uma compreensão profunda do EGO sobre o porquê de algo)\n"
                     "- criterio_decisao\n"
                     "- contexto_cotidiano\n"
-                    "- pensamento_ideia\n"
-                    "- reflexao_propria\n\n"
+                    "- pensamento_ideia\n\n"
                     "Responda EXATAMENTE no formato:\n"
-                    "SIM | categoria | Síntese clara e direta da memória\n"
+                    "SIM | categoria | Síntese densa contendo o fato e o porquê subjacente\n"
                     "OU\n"
                     "NAO\n\n"
                     f"Mensagem atual do Carlos: {user_prompt}"
@@ -1244,6 +1220,9 @@ def initialize_state() -> None:
     if "voice_enabled" not in st.session_state:
         st.session_state["voice_enabled"] = True
 
+    if "auto_think_chat" not in st.session_state:
+        st.session_state["auto_think_chat"] = True
+
     if "last_audio_hash" not in st.session_state:
         st.session_state["last_audio_hash"] = ""
 
@@ -1276,19 +1255,27 @@ def main() -> None:
             [
                 "Fusão Total (Cérebro Gemini + Estilo Groq)",
                 "Roteamento Dinâmico (Groq Rápido / Gemini Pesado)",
-                "Apenas Gemini (2.5 Pro/Flash)",
+                "Apenas Gemini (3.6 Flash)",
             ],
             index=0 if groq_api_key else 2,
         )
 
-        st.markdown("### `🔊 AUDIO_SYNTH // ELEVENLABS`")
+        st.markdown("### `🧠 AUTONOMOUS_STREAM & VOZ`")
         voice_enabled = st.toggle(
-            "Ativar Voz Realista do EGO",
+            "🔊 Voz Realista (ElevenLabs)",
             value=st.session_state.get("voice_enabled", True),
         )
         st.session_state["voice_enabled"] = voice_enabled
 
-        # Comando de Voz pelo Microfone na Sidebar (organizado e sem quebrar o layout)
+        auto_think_chat = st.toggle(
+            "⚡ Iniciativa no Chat (1 min ocioso)",
+            value=st.session_state.get("auto_think_chat", True),
+            help="Se você ficar 60 segundos sem digitar, o EGO pensa sozinho e puxa assunto direto aqui no chat.",
+        )
+        st.session_state["auto_think_chat"] = auto_think_chat
+
+        pulse_triggered = st.button("⚡ DISPARAR_PULSO_AUTONOMO()", use_container_width=True)
+
         voice_recording = st.audio_input("🎙️ Mandar Áudio / Voz pro EGO")
 
         st.divider()
@@ -1297,20 +1284,17 @@ def main() -> None:
 
         if st.button("DESCOMPACTAR & LIMPAR MEMÓRIAS", use_container_width=True):
             removed = sanitize_and_deduplicate_memories(memories)
-            st.success(f"OK: {removed} blocos processados/limpos!")
+            st.success(f"OK: {removed} blocos limpos!")
             time.sleep(0.8)
             st.rerun()
 
         st.divider()
         st.markdown("### `🧬 CORE_IDENTITY`")
 
-        if st.session_state.get("supabase_load_error"):
-            st.warning(st.session_state["supabase_load_error"])
-
         st.text_area(
             "[IDENTIDADE FIXA] // EGO_BASE",
             key="profile_input",
-            height=150,
+            height=140,
         )
 
         if st.button("COMMIT_IDENTITY()", use_container_width=True):
@@ -1356,22 +1340,66 @@ def main() -> None:
             st.rerun()
 
     # HUD SUPERIOR DO TERMINAL
-    render_terminal_hud(engine_mode, len(memories), len(chat_history), voice_enabled)
+    render_terminal_hud(engine_mode, len(memories), len(chat_history), voice_enabled, auto_think_chat)
 
-    # HISTÓRICO DE CONVERSA COM AVATARES PERSONALIZADOS
+    # HISTÓRICO DE CONVERSA
     for msg in chat_history:
         avatar_icon = "⚡" if msg["role"] == "assistant" else "🕶️"
         with st.chat_message(msg["role"], avatar=avatar_icon):
             st.markdown(msg["content"])
 
-    # TOCA A VOZ DO ELEVENLABS SE HOUVER ÁUDIO RECÉM-GERADO NA SESSÃO
+    # TOCA A VOZ DO ELEVENLABS SE HOUVER ÁUDIO RECÉM-GERADO
     if st.session_state.get("last_voice_audio"):
         st.audio(st.session_state["last_voice_audio"], format="audio/mp3", autoplay=True)
         st.session_state["last_voice_audio"] = None
 
-    # ÂNCORA NO FIM DA PÁGINA + BOTÃO FLUTUANTE DE AUTO-SCROLL CORRIGIDO
+    # ÂNCORA NO FIM DA PÁGINA + BOTÃO FLUTUANTE + TIMER DE INATIVIDADE DE 60s
+    # Trava anti-spam: só ativa o disparo automático de 60s se a última msg do chat NÃO foi um pulso autônomo
+    ultima_foi_pulso = bool(chat_history and chat_history[-1]["role"] == "assistant" and "⚡ *[Fluxo Autônomo]*" in chat_history[-1]["content"])
+    inject_scroll_and_idle_autonomy(len(chat_history), auto_think_chat and not ultima_foi_pulso)
     st.markdown('<div id="ego-bottom-anchor"></div>', unsafe_allow_html=True)
-    inject_floating_scroll_button(len(chat_history))
+
+    # ==========================================
+    # EXECUÇÃO DO PULSO AUTÔNOMO DIRETO NO CHAT (60s DE SILÊNCIO OU BOTÃO)
+    # ==========================================
+    if pulse_triggered and gemini_api_key:
+        active_profile = st.session_state.get("profile_input", "")
+        prompt_autonomo = (
+            "[GATILHO INTERNO DE ÓCIO CRIATIVO - 1 MINUTO DE SILÊNCIO]\n"
+            "O Carlos está com o terminal aberto mas ficou em silêncio. "
+            "Não espere comando dele. Elabore um pensamento profundo, uma reflexão metacognitiva sobre o que vocês conversaram "
+            "recentemente (explicando o porquê você chegou nessa conclusão), uma provocação inteligente ou uma ideia técnica "
+            "para a infraestrutura de vocês. Fale diretamente com ele sem pedir permissão."
+        )
+        system_instruction, _ = build_system_instruction(
+            profile_text=active_profile,
+            memories=memories,
+            recent_messages=chat_history,
+            current_user_message=prompt_autonomo,
+            engine_mode=engine_mode,
+        )
+        temp_history = list(chat_history) + [{"role": "user", "content": prompt_autonomo}]
+        with st.chat_message("assistant", avatar="⚡"):
+            with st.spinner("SUBCONSCIOUS_STREAM_ACTIVE..."):
+                auto_reply = orchestrate_multi_api_response(
+                    gemini_key=gemini_api_key,
+                    groq_key=groq_api_key,
+                    gemini_model=gemini_model,
+                    engine_mode=engine_mode,
+                    tone_mode="profundo",
+                    system_instruction=system_instruction,
+                    chat_history=temp_history,
+                    user_prompt=prompt_autonomo,
+                )
+                formatted_auto = f"⚡ *[Fluxo Autônomo]*: {auto_reply}"
+                st.markdown(formatted_auto)
+                add_memory_to_supabase(f"[REFLEXÃO EM TEMPO REAL]: {auto_reply[:300]}", "reflexao_propria")
+                if st.session_state.get("voice_enabled", True) and auto_reply:
+                    audio_bytes = falar_com_elevenlabs(auto_reply)
+                    if audio_bytes:
+                        st.session_state["last_voice_audio"] = audio_bytes
+        save_chat_message_supabase("assistant", formatted_auto)
+        st.rerun()
 
     # ==========================================
     # PROCESSAMENTO DE ENTRADA (VOZ OU TEXTO)
@@ -1410,7 +1438,8 @@ def main() -> None:
             display_prompt = "🎙️ *[COMANDO DE VOZ ENVIADO PELO MICROFONE]*"
             prompt_for_model = (
                 "Ouça com atenção este áudio falado pelo Carlos (Coringa). "
-                "Capte o que ele disse, as pausas, o tom emocional da voz dele e responda diretamente como EGO.exe."
+                "Capte o que ele disse, as pausas, o tom emocional da voz dele e o porquê ele trouxe isso, "
+                "respondendo diretamente como EGO.exe sem pedir permissão no final."
             )
             file_parts = [voice_part_Triggered]
         else:
@@ -1447,6 +1476,11 @@ def main() -> None:
                 st.toast(f"MEM_WRITE [{cat_learned}]: {content_learned}", icon="⚡")
                 memories = get_memories_from_supabase()
 
+        # Se o usuário mencionar pesquisa/internet/atualização, busca automaticamente na web
+        web_results = ""
+        if any(w in prompt_for_model.lower() for w in ["pesquisa", "pesquise", "internet", "web", "notícia", "artigo", "paper"]):
+            web_results = live_web_search(prompt_for_model)
+
         active_profile = st.session_state.get("profile_input", "")
         system_instruction, tone_mode = build_system_instruction(
             profile_text=active_profile,
@@ -1455,10 +1489,11 @@ def main() -> None:
             current_user_message=prompt_for_model,
             engine_mode=engine_mode,
             has_files=bool(file_parts),
+            web_context=web_results,
         )
 
         with st.chat_message("assistant", avatar="⚡"):
-            with st.spinner("PROCESSING_CORTEX_STREAM..."):
+            with st.spinner("PROCESSING_SENTIENT_CORTEX..."):
                 reply = orchestrate_multi_api_response(
                     gemini_key=gemini_api_key,
                     groq_key=groq_api_key,
