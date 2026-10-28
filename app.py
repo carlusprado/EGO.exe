@@ -22,6 +22,9 @@ st.set_page_config(
 )
 
 SYSTEM_VERSION = "v6.0-AUTONOMOUS_CORTEX"
+# Modelos Gemini: 3.6 Flash no chat; Flash-Lite pra tarefas leves e de alto volume (curadoria de memória).
+GEMINI_CHAT_MODEL = "gemini-3.6-flash"
+GEMINI_FAST_MODEL = "gemini-3.5-flash-lite"
 PROFILE_ROW_KEY = "default"
 FUSO_BR = timezone(timedelta(hours=-3))
 
@@ -940,9 +943,9 @@ def call_gemini_api(
     chat_history: List[Dict[str, str]],
     current_file_parts: Optional[List[Dict]] = None,
 ) -> str:
-    clean_model = preferred_model.replace("models/", "").strip() or "gemini-2.5-pro"
+    clean_model = preferred_model.replace("models/", "").strip() or GEMINI_CHAT_MODEL
     candidate_models = []
-    for m in [clean_model, "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"]:
+    for m in [clean_model, GEMINI_CHAT_MODEL, GEMINI_FAST_MODEL]:
         if m and m not in candidate_models:
             candidate_models.append(m)
 
@@ -959,7 +962,7 @@ def call_gemini_api(
     payload: Dict = {
         "contents": contents,
         "system_instruction": {"parts": [{"text": system_instruction}]},
-        "generationConfig": {"temperature": 0.72},
+        # Gemini 3.5+: temperature/top_p/top_k são deprecados; o tom é controlado pela system_instruction.
     }
 
     headers = {"Content-Type": "application/json", "x-goog-api-key": api_key.strip()}
@@ -1143,7 +1146,7 @@ def deep_extract_and_save_knowledge(
 
     recent_mem_texts = "\n".join(f"- {m.get('content', '')}" for m in existing_memories[-15:])
 
-    detection_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+    detection_url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_FAST_MODEL}:generateContent"
     headers = {"Content-Type": "application/json", "x-goog-api-key": api_key.strip()}
 
     detection_payload = {
@@ -1255,7 +1258,7 @@ def main() -> None:
 
     gemini_api_key = get_secret("GEMINI_API_KEY")
     groq_api_key = get_secret("GROQ_API_KEY")
-    gemini_model = get_secret("GEMINI_MODEL", default="gemini-2.5-pro")
+    gemini_model = get_secret("GEMINI_MODEL", default=GEMINI_CHAT_MODEL)
 
     memories = get_memories_from_supabase()
     chat_history = get_chat_history_supabase()
