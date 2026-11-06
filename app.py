@@ -831,7 +831,7 @@ def main() -> None:
             st.caption("Nenhum estudo isolado.")
 
     for msg in chat_history:
-        avatar_icon = "✦" if msg["role"] == "assistant" else None
+        avatar_icon = "✨" if msg["role"] == "assistant" else None
         with st.chat_message(msg["role"], avatar=avatar_icon):
             st.markdown(msg["content"])
 
@@ -933,7 +933,7 @@ def main() -> None:
             web_context=web_results,
         )
 
-        with st.chat_message("assistant", avatar="✦"):
+        with st.chat_message("assistant", avatar="✨"):
             with st.spinner(""):
                 reply = generate_ego_response(
                     gemini_key=gemini_api_key,
