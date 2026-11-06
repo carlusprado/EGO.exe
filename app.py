@@ -782,7 +782,7 @@ def autonomous_live_heartbeat(
     )
     reply = generate_ego_response(
         gemini_key=gemini_key,
-        groq_key=groq_key,
+        groq_key=groq_api_key,
         gemini_model=gemini_model,
         engine_mode=st.session_state.get("engine_mode", "Gemini Flash + Failover Groq"),
         tone_mode="curto",
