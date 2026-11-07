@@ -1019,7 +1019,7 @@ def main() -> None:
             with st.spinner(""):
                 reply = generate_ego_response(
                     gemini_key=gemini_api_key,
-                    groq_key=groq_key,
+                    groq_key=groq_api_key,
                     gemini_model=gemini_model,
                     engine_mode=st.session_state.get("engine_mode", "Gemini Flash + Failover Groq"),
                     tone_mode=tone_mode,
