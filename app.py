@@ -781,7 +781,7 @@ def autonomous_live_heartbeat(
         cine_mode=st.session_state.get("cine_mode", True),
     )
     reply = generate_ego_response(
-        gemini_key=gemini_api_key
+        gemini_key=gemini_api_key,
         groq_key=groq_api_key,
         gemini_model=gemini_model,
         engine_mode=st.session_state.get("engine_mode", "Gemini Flash + Failover Groq"),
