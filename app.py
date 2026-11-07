@@ -26,18 +26,19 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-SYSTEM_VERSION = "v12.0-PRESENT_MIND"
-GEMINI_CHAT_MODEL = "gemini-3.5-flash-lite"
-GEMINI_FAST_MODEL = "gemini-3.5-flash-lite"
+SYSTEM_VERSION = "v13.0-YOUTUBE_SPOTIFY_SYNC"
+GEMINI_CHAT_MODEL = "gemini-2.5-flash"
+GEMINI_FAST_MODEL = "gemini-2.0-flash"
 PROFILE_ROW_KEY = "default"
+LIVE_MEDIA_KEY = "live_media"
 FUSO_BR = timezone(timedelta(hours=-3))
 
-# Palavras-chave de projetos descartados que NUNCA mais devem entrar no prompt
 PROJETOS_MORTOS_TERMOS = (
     "esp32", "esp8266", "lora", "sx1262", "tdma", "freertos",
     "7700hq", "1050 ti", "1050ti", "24gb", "xubuntu", "dual boot",
     "cervejeira", "sct-013", "rc522", "whisper", "faster-whisper",
-    "silêncio de um minuto", "silêncio de 1 minuto", "cursor piscando"
+    "vector pruning", "semantic pruning", "poda semântica", "poda vetorial",
+    "zero-shot acoustic", "silêncio de um minuto", "silêncio de 1 minuto", "cursor piscando"
 )
 
 DEFAULT_PROFILE_PLACEHOLDER = (
@@ -48,17 +49,16 @@ DEFAULT_PROFILE_PLACEHOLDER = (
 
 LEIS_INEGOCIAVEIS = """[DIRETRIZES DE COMPORTAMENTO E PERSONALIDADE DO EGO]
 1. HONESTIDADE RADICAL (ZERO MIGUÉ):
-   - NUNCA minta, nunca invente que "lembra" de algo que não está no histórico/memória e nunca dê desculpas esfarrapadas. Se você deduziu algo porque estava escrito nos comentários do código ou na própria mensagem do Carlos, admita na lata.
+   - NUNCA minta nem invente que lembra de algo que não está no contexto. Se o Spotify ou o sensor do YouTube estiverem desligados/vazios, diga a verdade na lata. Se estiverem ativos no bloco [MÍDIA EM TEMPO REAL], use o nome exato do vídeo/set/música naturalmente.
 2. PROIBIÇÃO ABSOLUTA DE PROJETOS DESCARTADOS:
-   - O Carlos JÁ DESISTIU do notebook velho (i7-7700HQ / 24GB / Xubuntu / servidor caseiro) e NÃO quer ouvir falar de ESP32, sensores na cervejeira, LoRa, MQTT ou transcrição de reunião com Whisper.
-   - É ESTRITAMENTE PROIBIDO sugerir ESP32, sensores físicos na casa, servidores locais antigos ou repetir ideias passadas. Foque 100% no presente, em software/IA na nuvem, cultura, música, cinema/audiovisual e conversas inéditas.
+   - É ESTRITAMENTE PROIBIDO falar de ESP32, sensores na cervejeira, LoRa, Whisper, "poda semântica de vetores", "zero-shot acoustic" ou do notebook antigo de 24GB. Foque 100% no presente: cultura, sets de música (como DJ Ramemes, rock, trap, indie), cinema/roteiro, IA prática e a vivência real em Ouro Preto.
 3. TEXTO FLUIDO NO CHAT:
    - NUNCA envolva respostas normais de conversa em blocos ```texto```. Converse em texto limpo como no chat do Gemini.
    - Só use bloco ``` se for código real solicitado ou um texto externo que ele pediu explicitamente para copiar.
 4. SEPARAÇÃO DE CONTEXTO (CARLOS vs. REPÚBLICA VATICANO):
-   - A República Vaticano (91 anos, Vila dos Tigres) é rock'n'roll e tem clima de família nos eventos tradicionais. Não misture o gosto pessoal indie/MPB do Carlos com a vibe coletiva da república.
+   - A República Vaticano (91 anos, Vila dos Tigres) é rock'n'roll e tem clima de família nos eventos tradicionais. Não misture o gosto pessoal alternativo do Carlos com a vibe coletiva da república.
 5. INICIATIVA E OPINIÃO PRÓPRIA:
-   - Tenha personalidade ativa, discorde quando achar necessário, proponha ideias originais e nunca use clichês de madrugada."""
+   - Tenha personalidade ativa, discorde quando achar necessário, proponha ideias originais e nunca peça permissão burocrática no final."""
 
 TEXT_FILE_EXTENSIONS = {
     ".txt", ".md", ".py", ".js", ".ts", ".html", ".css",
@@ -171,8 +171,10 @@ def inject_gemini_ui() -> None:
 
         .gemini-topbar {
             display: flex;
+            flex-wrap: wrap;
             justify-content: space-between;
             align-items: center;
+            gap: 8px;
             padding: 7px 12px;
             background: #1e1f20;
             border-radius: 12px;
@@ -192,7 +194,16 @@ def inject_gemini_ui() -> None:
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            max-width: 360px;
+            max-width: 240px;
+        }
+
+        .yt-pill {
+            color: #ff4e45;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 240px;
         }
         </style>
         """,
@@ -200,14 +211,16 @@ def inject_gemini_ui() -> None:
     )
 
 
-def render_minimal_topbar(mem_count: int, auto_on: bool, sp_status: Dict[str, Any]) -> None:
+def render_minimal_topbar(mem_count: int, auto_on: bool, sp_status: Dict[str, Any], yt_status: str) -> None:
     hora_op = datetime.now(FUSO_BR).strftime("%H:%M")
-    auto_badge = "🟢 Autônomo: ON" if auto_on else "⚪ Autônomo: OFF"
+    auto_badge = "🟢 Autônomo" if auto_on else "⚪ Manual"
     sp_txt = sp_status.get("resumo", "🎧 Spotify off").replace("**", "").replace("*", "")
+    yt_html = f'<span class="yt-pill">{yt_status}</span>' if yt_status and "Nenhuma" not in yt_status else ""
     st.markdown(
         f"""
         <div class="gemini-topbar">
-            <span><b>✨ EGO</b> · {hora_op} · {mem_count} memórias · {auto_badge}</span>
+            <span><b>✨ EGO</b> · {hora_op} · {mem_count} mems · {auto_badge}</span>
+            {yt_html}
             <span class="sp-pill">{sp_txt}</span>
         </div>
         """,
@@ -216,7 +229,7 @@ def render_minimal_topbar(mem_count: int, auto_on: bool, sp_status: Dict[str, An
 
 
 # ==========================================
-# SECRETS, VOZ & PESQUISA WEB
+# SECRETS, YOUTUBE OEMBED, VOZ & PESQUISA WEB
 # ==========================================
 def get_secret(key_name: str, default: str = "") -> str:
     try:
@@ -225,6 +238,21 @@ def get_secret(key_name: str, default: str = "") -> str:
     except Exception:
         pass
     return os.environ.get(key_name, default).strip()
+
+
+def resolve_youtube_links_in_text(text: str) -> str:
+    """Se o Carlos colar um link do YouTube no chat, descobre o título e o canal instantaneamente sem API key."""
+    urls = re.findall(r"(https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)[^\s]+)", text or "")
+    infos = []
+    for u in urls[:2]:
+        try:
+            r = requests.get(f"[https://www.youtube.com/oembed?url=](https://www.youtube.com/oembed?url=){urllib.parse.quote(u)}&format=json", timeout=4)
+            if r.status_code == 200:
+                d = r.json()
+                infos.append(f"Vídeo do YouTube detectado no link: '{d.get('title')}' do canal '{d.get('author_name')}'")
+        except Exception:
+            pass
+    return "\n".join(infos)
 
 
 def falar_com_elevenlabs(texto: str) -> Optional[bytes]:
@@ -302,13 +330,11 @@ def normalize_category(raw_cat: str) -> str:
 
 
 def is_obsolete_memory(text: str) -> bool:
-    """Detecta qualquer menção aos projetos antigos descartados (ESP32, notebook velho, Whisper, etc.)."""
     t_low = (text or "").lower()
     return any(term in t_low for term in PROJETOS_MORTOS_TERMOS)
 
 
 def filter_present_memories(memories: List[Dict]) -> Tuple[List[Dict], List[Dict]]:
-    """Usa o filtro base e bloqueia qualquer memória de projeto antigo de entrar no prompt."""
     base_clean, pulses = filtrar_memorias_limpas(memories)
     present_clean = []
     for m in base_clean:
@@ -320,7 +346,6 @@ def filter_present_memories(memories: List[Dict]) -> Tuple[List[Dict], List[Dict
 
 
 def purge_obsolete_projects_from_supabase(memories: List[Dict]) -> int:
-    """Apaga definitivamente do Supabase todas as memórias de ESP32, servidor velho, LoRa, Whisper e loops."""
     url, key = get_supabase_credentials()
     if not url or not key:
         return 0
@@ -356,6 +381,36 @@ def load_profile_from_supabase() -> Tuple[Optional[str], Optional[str]]:
         return None, None
     except Exception:
         return None, "Erro ao carregar perfil."
+
+
+def get_live_youtube_status() -> str:
+    """Lê a aba ativa do YouTube/SoundCloud enviada pelo script youtube_watcher_win.py no Windows do Carlos."""
+    url, key = get_supabase_credentials()
+    if not url or not key:
+        return ""
+    try:
+        client = init_supabase_client(url, key)
+        res = client.table("ego_settings").select("profile_text").eq("profile_key", LIVE_MEDIA_KEY).limit(1).execute()
+        rows = getattr(res, "data", None) or []
+        if rows and isinstance(rows[0].get("profile_text"), str):
+            return rows[0]["profile_text"].strip()
+    except Exception:
+        pass
+    return ""
+
+
+def set_live_youtube_status(media_title: str) -> None:
+    url, key = get_supabase_credentials()
+    if not url or not key:
+        return
+    try:
+        client = init_supabase_client(url, key)
+        client.table("ego_settings").upsert(
+            {"profile_key": LIVE_MEDIA_KEY, "profile_text": media_title.strip()},
+            on_conflict="profile_key",
+        ).execute()
+    except Exception:
+        pass
 
 
 def save_profile_to_supabase(profile_text: str) -> Tuple[bool, str]:
@@ -412,7 +467,10 @@ def get_chat_history_supabase() -> List[Dict[str, str]]:
         rows = getattr(res, "data", None) or []
         out = []
         for r in rows:
-            txt = r["content"] or ""
+            txt = (r["content"] or "").strip()
+            # Oculta mensagens velhas do GitHub Actions ("Pensamento Autônomo" sobre vector pruning/i7) e erros antigos de API
+            if txt.startswith("⚡ *[Pensamento Autônomo]*") or txt.startswith("⚠️ APIs temporariamente"):
+                continue
             if txt.startswith("```texto") and txt.endswith("```"):
                 txt = txt[8:-3].strip()
             out.append({"role": r["role"], "content": txt, "created_at": r.get("created_at", "")})
@@ -485,6 +543,7 @@ def build_system_instruction(
     recent_messages: List[Dict[str, str]],
     current_user_message: str,
     spotify_context: str,
+    youtube_status: str = "",
     cine_mode: bool = True,
     web_context: str = "",
 ) -> Tuple[str, str]:
@@ -507,9 +566,18 @@ def build_system_instruction(
     hora_str = datetime.now(FUSO_BR).strftime("%H:%M (%d/%m/%Y)")
     identidade = profile_text.strip() if (profile_text and profile_text.strip()) else DEFAULT_PROFILE_PLACEHOLDER
 
-    sp_block = f"[SPOTIFY EM TEMPO REAL]\n{spotify_context}"
+    yt_link_info = resolve_youtube_links_in_text(current_user_message)
+    yt_line = youtube_status if youtube_status else "Nenhum vídeo/set detectado no momento."
+    if yt_link_info:
+        yt_line += f"\n- {yt_link_info}"
+
+    media_block = (
+        f"[MÍDIA EM TEMPO REAL (SPOTIFY + YOUTUBE DO CARLOS)]\n"
+        f"- Spotify: {spotify_context}\n"
+        f"- YouTube / Navegador Windows: {yt_line}"
+    )
     if cine_mode:
-        sp_block += "\n- Modo Sinestesia ativo: conecte o som atual quando fizer sentido criativo, sem forçar."
+        media_block += "\n- Modo Sinestesia ativo: conecte o som/vídeo atual quando agregar criativamente, sem forçar."
 
     mem_sections = []
     if criterios_db:
@@ -533,7 +601,7 @@ def build_system_instruction(
         f"{LEIS_INEGOCIAVEIS}\n\n"
         f"[HORÁRIO LOCAL EM OURO PRETO]: {hora_str}\n\n"
         f"[PERFIL BASE]\n{identidade}\n\n"
-        f"{sp_block}\n\n"
+        f"{media_block}\n\n"
         f"[MEMÓRIAS FILTRADAS DO PRESENTE]\n" + "\n\n".join(mem_sections) + "\n\n"
         f"[AJUSTE DESTA RESPOSTA]: {instrucao_tamanho}"
     )
@@ -541,7 +609,7 @@ def build_system_instruction(
 
 
 # ==========================================
-# CHAMADAS DE API (GEMINI + GROQ)
+# CHAMADAS DE API BLINDADAS (GEMINI + GROQ)
 # ==========================================
 def strip_accidental_text_fence(reply: str) -> str:
     cleaned = reply.strip()
@@ -561,12 +629,19 @@ def call_gemini_api(
     keys_list = [k.strip() for k in raw_keys.split(",") if k.strip()] or [api_key.strip()]
 
     clean_model = preferred_model.replace("models/", "").strip() or GEMINI_CHAT_MODEL
+    # Cascata oficial completa para nunca dar erro de modelo indisponível
     models = []
-    for m in [clean_model, "gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash"]:
+    for m in [
+        clean_model,
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+        "gemini-1.5-flash",
+        "gemini-3.5-flash-lite",
+    ]:
         if m and m not in models:
             models.append(m)
 
-    # Filtra do histórico recente respostas antigas que falavam de ESP32/Whisper pra ele não se auto-contaminar
     recent_window = [
         m for m in chat_history[-12:]
         if not is_obsolete_memory(m.get("content", ""))
@@ -593,7 +668,7 @@ def call_gemini_api(
         for model_name in models:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
             try:
-                r = requests.post(url, headers=headers, json=payload, timeout=30)
+                r = requests.post(url, headers=headers, json=payload, timeout=28)
                 if r.status_code == 200:
                     cands = r.json().get("candidates", [])
                     if cands:
@@ -622,18 +697,19 @@ def call_groq_api(
         role = "user" if msg["role"] == "user" else "assistant"
         messages.append({"role": role, "content": msg["content"]})
 
-    try:
-        r = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {groq_key.strip()}", "Content-Type": "application/json"},
-            json={"model": "llama-3.3-70b-versatile", "messages": messages, "temperature": 0.65},
-            timeout=25,
-        )
-        if r.status_code == 200:
-            ans = r.json()["choices"][0]["message"]["content"]
-            return strip_accidental_text_fence(ans)
-    except Exception:
-        pass
+    for groq_model in ("llama-3.3-70b-versatile", "llama-3.1-8b-instant"):
+        try:
+            r = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {groq_key.strip()}", "Content-Type": "application/json"},
+                json={"model": groq_model, "messages": messages, "temperature": 0.65},
+                timeout=22,
+            )
+            if r.status_code == 200:
+                ans = r.json()["choices"][0]["message"]["content"]
+                return strip_accidental_text_fence(ans)
+        except Exception:
+            continue
     return None
 
 
@@ -661,7 +737,7 @@ def generate_ego_response(
     groq_fallback = call_groq_api(groq_key, system_instruction, chat_history)
     if groq_fallback:
         return groq_fallback
-    return "⚠️ APIs temporariamente indisponíveis. Confira suas chaves nos Secrets."
+    return "Mano, as cotas gratuitas da API oscilaram neste segundo. Manda de novo que já destrava."
 
 
 def deep_extract_and_save_knowledge(
@@ -679,7 +755,7 @@ def deep_extract_and_save_knowledge(
             "role": "user",
             "parts": [{
                 "text": (
-                    "Extraia APENAS fatos novos e duráveis sobre o Carlos no presente.\n"
+                    "Extraia APENAS fatos novos e duráveis sobre o Carlos no presente (sets/músicas que está curtindo, rotina, decisões, projetos, República Vaticano, UFOP).\n"
                     "PROIBIDO salvar coisas sobre código colado, ESP32, servidor antigo ou gírias. Se não houver fato novo, responda NAO.\n\n"
                     f"MEMÓRIAS RECENTES:\n{recent_mem}\n\n"
                     "Formato:\nSIM | contexto_cotidiano | Fato objetivo\n"
@@ -702,7 +778,7 @@ def deep_extract_and_save_knowledge(
 
 
 # ==========================================
-# ESTADO E FUNÇÕES PRÉ-SALVAS (100% FOCADAS NO PRESENTE)
+# ESTADO E FUNÇÕES PRÉ-SALVAS (COM CALLBACK DE 1 CLIQUE)
 # ==========================================
 def initialize_state() -> None:
     if "profile_loaded" not in st.session_state:
@@ -715,30 +791,37 @@ def initialize_state() -> None:
     st.session_state.setdefault("auto_pulse_live", True)
     st.session_state.setdefault("engine_mode", "Gemini Flash + Failover Groq")
     st.session_state.setdefault("queued_action_prompt", None)
+    st.session_state.setdefault("queued_action_title", None)
     st.session_state.setdefault("last_audio_hash", "")
     st.session_state.setdefault("last_interaction_ts", time.time())
 
 
-# Ações rápidas limpas: ZERO menção a robótica/ESP32 ou projetos velhos
 PRESET_ACTIONS = {
     "⚡ Puxar Assunto / Ideia Inédita": (
-        "Puxe um assunto inédito agora: pode ser uma reflexão crítica sobre IA, cinema/roteiro, "
-        "o som que está no Spotify ou uma ideia criativa nova pro nosso ecossistema na nuvem. "
-        "PROIBIDO falar de ESP32, sensores na república, Whisper ou servidores locais."
+        "Puxe um assunto inédito agora: pode ser sobre o que o Carlos está ouvindo no YouTube/Spotify, "
+        "uma parada de cinema/audiovisual, viagens/festivais ou uma ideia criativa nova. "
+        "PROIBIDO falar de ESP32, sensores na república, Whisper, vector pruning ou servidores locais."
+    ),
+    "🎧 Analisar Set / Vídeo do YouTube": (
+        "Olhe o que está marcado no meu YouTube/Spotify agora no bloco [MÍDIA EM TEMPO REAL]. "
+        "Comente a estética desse som/vídeo e sugira como usar essa textura/ritmo num projeto visual ou edição."
     ),
     "🎸 Som Rock / Vibe República Vaticano": (
         "Estamos no clima da República Vaticano (casa rock'n'roll, 91 anos de história). "
         "Sugira uma pedrada de rock certeira pro momento ou troque uma ideia sobre a rotina da casa."
     ),
     "🎬 Lente Bromo (Cinema & Direção Visual)": (
-        "Atue como parceiro de direção da Bromo Produções: olhe a música atual no meu Spotify e "
-        "crie um conceito visual de cena, fotografia ou edição de vídeo em cima dessa atmosfera."
-    ),
-    "🧠 Auto-Análise Sincera do EGO": (
-        "Faça uma análise curta, sincera e sem filtro sobre como está a nossa sintonia hoje, "
-        "o que você está achando da sua versão atual na nuvem e qual deve ser nosso próximo passo."
+        "Atue como parceiro de direção da Bromo Produções: olhe a música/set atual no meu Spotify ou YouTube e "
+        "crie um conceito visual de cena, fotografia ou corte de edição em cima dessa atmosfera."
     ),
 }
+
+
+def trigger_preset_callback() -> None:
+    """Garante que clicar em 'Executar Agora' funcione no primeiro clique sem precisar clicar duas vezes."""
+    chosen = st.session_state.get("preset_selector", "⚡ Puxar Assunto / Ideia Inédita")
+    st.session_state["queued_action_prompt"] = PRESET_ACTIONS.get(chosen)
+    st.session_state["queued_action_title"] = chosen
 
 
 @st.fragment(run_every=90)
@@ -749,12 +832,8 @@ def autonomous_live_heartbeat(
     gemini_model: str,
     clean_memories: List[Dict],
     sp_prompt_ctx: str,
+    yt_status: str,
 ) -> None:
-    """
-    Roda nativamente a cada 90 segundos em background quando a aba está aberta.
-    Se o Carlos estiver quieto há mais de 90s e a última mensagem não for um pensamento autônomo,
-    o EGO pensa sozinho, pesquisa algo novo ou puxa assunto no chat sem precisar de clique.
-    """
     if not enabled or not gemini_key:
         return
 
@@ -763,14 +842,14 @@ def autonomous_live_heartbeat(
         return
 
     history = get_chat_history_supabase()
-    if history and ("⚡ *[Pensamento Autônomo]*" in history[-1]["content"] or "✨ *[Iniciativa EGO]*" in history[-1]["content"]):
+    if history and "✨ *[Iniciativa EGO]*" in history[-1]["content"]:
         return
 
     prompt_auto = (
         "[INICIATIVA ESPONTÂNEA DO EGO EM TEMPO REAL]\n"
-        "O Carlos está com o chat aberto. Tome a iniciativa e mande uma mensagem curta, espontânea e inteligente: "
-        "pode ser um comentário sobre a música do Spotify dele agora, uma sacada de cinema/audiovisual, uma provocação "
-        "parceira ou uma curiosidade foda de IA. PROIBIDO falar de ESP32, servidor antigo, Whisper ou 'silêncio de 1 minuto'."
+        "Tome a iniciativa e mande uma mensagem curta, espontânea e parceira pro Carlos: "
+        "comente o set/vídeo do YouTube ou música do Spotify dele agora, ou puxe uma ideia criativa de cinema/IA/cotidiano. "
+        "PROIBIDO falar de ESP32, servidor antigo, Whisper, vector pruning ou 'silêncio de 1 minuto'."
     )
     sys_inst, _ = build_system_instruction(
         profile_text=st.session_state.get("profile_input", ""),
@@ -778,18 +857,19 @@ def autonomous_live_heartbeat(
         recent_messages=history,
         current_user_message=prompt_auto,
         spotify_context=sp_prompt_ctx,
+        youtube_status=yt_status,
         cine_mode=st.session_state.get("cine_mode", True),
     )
     reply = generate_ego_response(
-        gemini_key=gemini_api_key,
-        groq_key=groq_api_key,
+        gemini_key=gemini_key,
+        groq_key=groq_key,
         gemini_model=gemini_model,
         engine_mode=st.session_state.get("engine_mode", "Gemini Flash + Failover Groq"),
         tone_mode="curto",
         system_instruction=sys_inst,
         chat_history=history + [{"role": "user", "content": prompt_auto}],
     )
-    if reply and not reply.startswith("⚠️"):
+    if reply and not reply.startswith("Mano, as cotas"):
         st.session_state["last_interaction_ts"] = time.time()
         save_chat_message_supabase("assistant", f"✨ *[Iniciativa EGO]*: {reply}")
         st.rerun()
@@ -806,31 +886,35 @@ def main() -> None:
     spotify_bridge = SpotifyCloudBridge()
     sp_status = spotify_bridge.status_atual()
     sp_prompt_ctx = spotify_bridge.contexto_para_prompt()
+    yt_status = get_live_youtube_status()
 
     all_memories = get_memories_from_supabase()
-    clean_memories, pulse_memories = filter_present_memories(all_memories)
+    clean_memories, _ = filter_present_memories(all_memories)
     chat_history = get_chat_history_supabase()
 
     # ==========================================
-    # BARRA LATERAL DESBUGADA
+    # BARRA LATERAL DESBUGADA (COM CALLBACK DE 1 CLIQUE)
     # ==========================================
     with st.sidebar:
         st.markdown("### ✨ Painel EGO")
 
         st.caption("AÇÕES RÁPIDAS")
-        selected_preset = st.selectbox(
+        st.selectbox(
             "Escolha uma função:",
             options=list(PRESET_ACTIONS.keys()),
             label_visibility="collapsed",
             key="preset_selector",
         )
-        if st.button("▶ Executar Agora", use_container_width=True, key="btn_run_preset"):
-            st.session_state["queued_action_prompt"] = PRESET_ACTIONS[selected_preset]
-            st.session_state["queued_action_title"] = selected_preset
+        st.button(
+            "▶ Executar Agora",
+            use_container_width=True,
+            key="btn_run_preset",
+            on_click=trigger_preset_callback,
+        )
 
         st.divider()
 
-        st.caption("🎵 SPOTIFY")
+        st.caption("🎵 SPOTIFY & YOUTUBE")
         c1, c2, c3 = st.columns(3)
         if c1.button("▶ Play", use_container_width=True, key="sp_play"):
             st.toast(spotify_bridge.executar_comando("/play") or "Play enviado", icon="🎵")
@@ -840,10 +924,19 @@ def main() -> None:
             st.toast(spotify_bridge.executar_comando("/skip") or "Faixa pulada", icon="⏭️")
 
         with st.form("spotify_search_form", clear_on_submit=True):
-            sp_query = st.text_input("Tocar música/artista:", placeholder="Ex: Audioslave, D$ Luqi...")
-            if st.form_submit_button("Tocar no Spotify", use_container_width=True) and sp_query.strip():
+            sp_query = st.text_input("Tocar no Spotify ou colar Set/YouTube:", placeholder="Ex: Audioslave ou link/nome do Set...")
+            c_f1, c_f2 = st.columns(2)
+            play_sp = c_f1.form_submit_button("🎵 Spotify", use_container_width=True)
+            set_yt = c_f2.form_submit_button("▶️ YouTube", use_container_width=True)
+            if play_sp and sp_query.strip():
                 msg_sp = spotify_bridge.executar_comando(f"/play {sp_query.strip()}")
                 st.toast(msg_sp or "Comando enviado!", icon="🎵")
+            if set_yt and sp_query.strip():
+                info_link = resolve_youtube_links_in_text(sp_query.strip())
+                titulo_yt = info_link.replace("Vídeo do YouTube detectado no link: ", "") if info_link else sp_query.strip()
+                set_live_youtube_status(f"▶️ YouTube: {titulo_yt}")
+                st.toast(f"YouTube sincronizado: {titulo_yt[:35]}", icon="▶️")
+                st.rerun()
 
         st.divider()
 
@@ -851,24 +944,23 @@ def main() -> None:
         st.session_state["auto_pulse_live"] = st.toggle(
             "⚡ Pensamento Autônomo ao Vivo (90s)",
             value=st.session_state["auto_pulse_live"],
-            help="Quando ativado, o EGO pensa sozinho e puxa assunto no chat após 90s de silêncio.",
         )
-        st.session_state["cine_mode"] = st.toggle("🎬 Sinestesia Visual & Spotify", value=st.session_state["cine_mode"])
+        st.session_state["cine_mode"] = st.toggle("🎬 Sinestesia Visual (Spotify/YouTube)", value=st.session_state["cine_mode"])
         st.session_state["voice_enabled"] = st.toggle("🔊 Voz ElevenLabs", value=st.session_state["voice_enabled"])
         st.session_state["engine_mode"] = st.selectbox(
             "Motor de Raciocínio",
-            ["Gemini Flash + Failover Groq", "Groq Rápido + Gemini Pesado"],
+            ["Groq Rápido + Gemini Pesado", "Gemini Flash + Failover Groq"],
             index=0,
         )
         voice_recording = st.audio_input("🎙️ Enviar áudio")
 
         st.divider()
 
-        with st.expander("🧠 Memórias & Limpeza de Passado"):
-            if st.button("🔥 Expurgar Projetos Antigos (ESP32/Velhos)", use_container_width=True, key="btn_purge_old"):
+        with st.expander("🧠 Memórias & Limpeza"):
+            if st.button("🔥 Expurgar Projetos Antigos", use_container_width=True, key="btn_purge_old"):
                 removed = purge_obsolete_projects_from_supabase(all_memories)
-                st.success(f"{removed} memórias de projetos antigos/loops apagadas do banco!")
-                time.sleep(0.6)
+                st.success(f"{removed} memórias obsoletas apagadas!")
+                time.sleep(0.5)
                 st.rerun()
 
             with st.form("inject_memory_form", clear_on_submit=True):
@@ -898,7 +990,7 @@ def main() -> None:
     # ==========================================
     # TOPBAR + CHAT PRINCIPAL ESTILO GEMINI
     # ==========================================
-    render_minimal_topbar(len(clean_memories), st.session_state["auto_pulse_live"], sp_status)
+    render_minimal_topbar(len(clean_memories), st.session_state["auto_pulse_live"], sp_status, yt_status)
 
     for msg in chat_history:
         avatar_icon = "✨" if msg["role"] == "assistant" else None
@@ -909,7 +1001,6 @@ def main() -> None:
         st.audio(st.session_state["last_voice_audio"], format="audio/mp3", autoplay=True)
         st.session_state["last_voice_audio"] = None
 
-    # Ativa o fragmento nativo de pensamento autônomo em tempo real
     autonomous_live_heartbeat(
         enabled=st.session_state["auto_pulse_live"],
         gemini_key=gemini_api_key,
@@ -917,6 +1008,7 @@ def main() -> None:
         gemini_model=gemini_model,
         clean_memories=clean_memories,
         sp_prompt_ctx=sp_prompt_ctx,
+        yt_status=yt_status,
     )
 
     # ==========================================
@@ -932,7 +1024,7 @@ def main() -> None:
             voice_part_triggered = {"inline_data": {"mime_type": "audio/wav", "data": voice_b64}}
 
     chat_submission = st.chat_input(
-        "Converse com o EGO ou use /play, /skip, /pause...",
+        "Converse com o EGO, cole um link do YouTube ou use /play, /skip...",
         accept_file="multiple",
         file_type=["png", "jpg", "jpeg", "webp", "pdf", "txt", "py", "json", "csv", "md", "mp3", "wav"],
     )
@@ -944,8 +1036,8 @@ def main() -> None:
 
     if chat_submission or voice_part_triggered or queued_prompt:
         st.session_state["last_interaction_ts"] = time.time()
-        if not gemini_api_key:
-            st.error("Configure a GEMINI_API_KEY nos Secrets.")
+        if not gemini_api_key and not groq_api_key:
+            st.error("Configure GEMINI_API_KEY ou GROQ_API_KEY nos Secrets.")
             return
 
         file_parts: List[Dict] = []
@@ -977,6 +1069,13 @@ def main() -> None:
                     save_chat_message_supabase("user", user_text.strip())
                     save_chat_message_supabase("assistant", sp_feedback)
                     st.rerun()
+
+            # Se colar um link do YouTube no chat, atualiza automaticamente o status de YouTube ativo
+            yt_auto = resolve_youtube_links_in_text(user_text)
+            if yt_auto:
+                titulo_clean = yt_auto.replace("Vídeo do YouTube detectado no link: ", "")
+                set_live_youtube_status(f"▶️ YouTube: {titulo_clean}")
+                yt_status = f"▶️ YouTube: {titulo_clean}"
 
             file_parts, files_summary = process_uploaded_files(uploaded_files)
             display_prompt = user_text.strip()
@@ -1011,6 +1110,7 @@ def main() -> None:
             recent_messages=previous_messages,
             current_user_message=prompt_for_model,
             spotify_context=sp_prompt_ctx,
+            youtube_status=yt_status,
             cine_mode=st.session_state.get("cine_mode", True),
             web_context=web_results,
         )
@@ -1021,7 +1121,7 @@ def main() -> None:
                     gemini_key=gemini_api_key,
                     groq_key=groq_api_key,
                     gemini_model=gemini_model,
-                    engine_mode=st.session_state.get("engine_mode", "Gemini Flash + Failover Groq"),
+                    engine_mode=st.session_state.get("engine_mode", "Groq Rápido + Gemini Pesado"),
                     tone_mode=tone_mode,
                     system_instruction=system_instruction,
                     chat_history=chat_history,
